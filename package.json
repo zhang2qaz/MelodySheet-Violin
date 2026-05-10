@@ -1,0 +1,16 @@
+{
+  "name": "melodysheet-violin",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Monorepo for MelodySheet Violin MVP.",
+  "scripts": {
+    "dev:web": "npm --prefix apps/web run dev",
+    "build:web": "npm --prefix apps/web run build",
+    "lint:web": "npm --prefix apps/web run lint",
+    "test:api": "cd apps/api && pytest",
+    "dev:api": "cd apps/api && uvicorn main:app --reload --port 8000"
+  },
+  "workspaces": [
+    "apps/web"
+  ]
+}
