@@ -6,7 +6,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -21,7 +21,7 @@ from app.job_store import (
     upload_dir,
 )
 from app.models import JobCreateResponse, JobStatusResponse, RegenerateRequest, RegenerateResponse
-from app.music_processing import PipelineError, process_job, regenerate_from_notes
+from app.music_processing import PipelineError, TARGET_INSTRUMENT_PROFILES, process_job, regenerate_from_notes
 
 
 @asynccontextmanager
@@ -48,8 +48,16 @@ def extract_extension(filename: str | None) -> str:
 
 def validate_job_id(job_id: str) -> str:
     if not re.fullmatch(r"[a-f0-9]{32}", job_id):
-        raise HTTPException(status_code=404, detail="Job not found.")
+        raise HTTPException(status_code=404, detail="未找到处理任务。")
     return job_id
+
+
+def validate_target_instrument(target_instrument: str) -> str:
+    normalized = (target_instrument or "violin").strip().lower()
+    if normalized not in TARGET_INSTRUMENT_PROFILES:
+        allowed = ", ".join(sorted(TARGET_INSTRUMENT_PROFILES))
+        raise HTTPException(status_code=400, detail=f"不支持的目标乐器。可选项：{allowed}。")
+    return normalized
 
 
 async def save_upload_file(file: UploadFile, destination: Path) -> int:
@@ -66,22 +74,28 @@ async def save_upload_file(file: UploadFile, destination: Path) -> int:
                 destination.unlink(missing_ok=True)
                 raise HTTPException(
                     status_code=413,
-                    detail=f"File is too large. Max size is {settings.max_upload_bytes} bytes.",
+                    detail=f"文件过大。最大允许大小为 {settings.max_upload_bytes} 字节。",
                 )
             handle.write(chunk)
 
     if size == 0:
         destination.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+        raise HTTPException(status_code=400, detail="上传的文件为空。")
     return size
 
 
 @app.post("/api/jobs", response_model=JobCreateResponse)
-async def create_job(background_tasks: BackgroundTasks, file: UploadFile = File(...)) -> JobCreateResponse:
+async def create_job(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    target_instrument: str = Form("violin"),
+) -> JobCreateResponse:
     extension = extract_extension(file.filename)
     if extension not in settings.allowed_file_types:
         allowed = ", ".join(sorted(settings.allowed_file_types))
-        raise HTTPException(status_code=400, detail=f"Unsupported file type. Allowed types: {allowed}.")
+        raise HTTPException(status_code=400, detail=f"不支持的文件类型。支持格式：{allowed}。")
+
+    normalized_target = validate_target_instrument(target_instrument)
 
     job_id = uuid.uuid4().hex
     ensure_job_dirs(job_id, settings)
@@ -94,6 +108,7 @@ async def create_job(background_tasks: BackgroundTasks, file: UploadFile = File(
             original_filename=file.filename or f"original.{extension}",
             extension=extension,
             size_bytes=size_bytes,
+            target_instrument=normalized_target,
             config=settings,
         )
     except HTTPException:
@@ -114,7 +129,7 @@ def get_job(job_id: str) -> JobStatusResponse:
     try:
         metadata = read_job(job_id, settings)
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Job not found.") from None
+        raise HTTPException(status_code=404, detail="未找到处理任务。") from None
     return JobStatusResponse(**metadata)
 
 
@@ -122,12 +137,12 @@ def get_job(job_id: str) -> JobStatusResponse:
 def get_file(job_id: str, filename: str) -> FileResponse:
     validate_job_id(job_id)
     if "/" in filename or "\\" in filename or filename.startswith("."):
-        raise HTTPException(status_code=404, detail="File not found.")
+        raise HTTPException(status_code=404, detail="未找到文件。")
 
     try:
         metadata = read_job(job_id, settings)
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Job not found.") from None
+        raise HTTPException(status_code=404, detail="未找到处理任务。") from None
 
     extension = metadata.get("input", {}).get("extension")
     allowed_upload = f"original.{extension}"
@@ -138,10 +153,10 @@ def get_file(job_id: str, filename: str) -> FileResponse:
     elif filename in allowed_outputs:
         path = output_dir(job_id, settings) / filename
     else:
-        raise HTTPException(status_code=404, detail="File not found.")
+        raise HTTPException(status_code=404, detail="未找到文件。")
 
     if not path.exists() or not path.is_file():
-        raise HTTPException(status_code=404, detail="File not found.")
+        raise HTTPException(status_code=404, detail="未找到文件。")
     return FileResponse(path)
 
 
@@ -151,7 +166,7 @@ def regenerate_job(job_id: str, payload: RegenerateRequest) -> RegenerateRespons
     try:
         read_job(job_id, settings)
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Job not found.") from None
+        raise HTTPException(status_code=404, detail="未找到处理任务。") from None
 
     try:
         result = regenerate_from_notes(

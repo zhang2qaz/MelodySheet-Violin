@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 JobStatus = Literal[
     "uploaded",
     "converting",
+    "preprocessing",
     "transcribing",
     "postprocessing",
     "completed",
@@ -31,6 +32,9 @@ class JobResult(BaseModel):
     detected_key: Optional[str] = None
     estimated_tempo: Optional[int] = None
     note_count: Optional[int] = None
+    target_instrument: Optional[str] = None
+    filtered_note_count: int = 0
+    preprocessing_summary: Optional[str] = None
     violin_range_warning: bool = False
     violin_range_message: Optional[str] = None
 
@@ -59,7 +63,7 @@ class EditableNote(BaseModel):
         normalized = value.strip().lower()
         if normalized not in VALID_DURATION_LABELS:
             allowed = ", ".join(sorted(VALID_DURATION_LABELS))
-            raise ValueError(f"duration_label must be one of: {allowed}")
+            raise ValueError(f"duration_label 必须是以下值之一：{allowed}")
         return normalized
 
     @field_validator("pitch")
@@ -70,7 +74,7 @@ class EditableNote(BaseModel):
     @model_validator(mode="after")
     def validate_times(self) -> "EditableNote":
         if self.end_time <= self.start_time:
-            raise ValueError("end_time must be greater than start_time")
+            raise ValueError("end_time 必须大于 start_time")
         return self
 
 

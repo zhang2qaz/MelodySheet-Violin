@@ -1,67 +1,70 @@
-# MelodySheet Violin
+# 小提琴旋律谱
 
-MelodySheet Violin turns a clear melody recording into an editable violin practice sheet. The MVP accepts user-uploaded audio, runs a local audio-to-MIDI transcription pipeline, generates MusicXML and simplified numbered notation, renders staff notation in the browser, supports playback, and lets users correct notes before exporting.
+小提琴旋律谱是一款面向音乐学习的 MVP Web 应用：用户上传自己有权使用的音频文件，系统会尝试提取主旋律，生成 MIDI、MusicXML、简谱 JSON 和可编辑音符 JSON，并在浏览器中展示五线谱、简谱、播放和基础修正工具。
 
-This is a music-learning tool for violin beginners, teachers, parents, and students who want to turn a short melody recording into a readable practice sheet.
+这个版本的重点不是华丽界面，而是真实可运行的“音频到练习谱”处理管线。
 
-## MVP Scope
+## MVP 范围
 
-What the app can do:
+已经支持：
 
-- Accept uploaded `mp3`, `wav`, and `m4a` files.
-- Convert audio to mono WAV with `ffmpeg`.
-- Run Spotify Basic Pitch to generate MIDI.
-- Parse MIDI with `music21`.
-- Export `melody.mid`, `melody.musicxml`, `numbered.json`, and `notes.json`.
-- Render MusicXML in the browser with OpenSheetMusicDisplay.
-- Play back the generated melody using the editable note sequence.
-- Edit pitch and duration labels, delete notes, transpose by semitone, and regenerate notation.
-- Warn when detected notes are below standard violin range around G3.
+- 上传 `mp3`、`wav`、`m4a`。
+- 选择目标乐器：小提琴、人声、长笛、钢琴、吉他、二胡。
+- 使用 `ffmpeg` 转换为单声道 WAV。
+- 在转写前按目标乐器做基础频段降噪、动态归一化和音域过滤。
+- 可选启用 Demucs 做人声/伴奏二分离。
+- 使用 Spotify Basic Pitch 生成 MIDI。
+- 使用 `music21` 解析 MIDI、估计调号/速度、导出 MusicXML。
+- 生成简化简谱 JSON 和可编辑音符 JSON。
+- 浏览器内渲染 MusicXML，显示简谱，播放生成旋律。
+- 编辑音高、时值，删除音符，半音升降，并重新生成谱子。
+- 小提琴目标下检测到 G3 以下音符时给出音域警告。
 
-What the app cannot do:
+暂不支持：
 
-- It does not integrate QQ Music, Spotify streaming, Apple Music, NetEase Cloud Music, or any other music platform.
-- It does not bypass DRM or process encrypted/protected streams.
-- It does not claim legal permission to transcribe commercial songs.
-- It does not guarantee perfect transcription, especially for dense accompaniment or polyphonic recordings.
-- It does not yet provide violin fingering, bowing marks, PDF export, or advanced sheet editing.
+- 不接入 QQ 音乐、Spotify、Apple Music、网易云音乐或任何外部音乐平台。
+- 不绕过 DRM，不处理加密或受保护的流媒体音频。
+- 不承诺用户拥有转写商业歌曲的法律权限。
+- 不保证复杂伴奏、多乐器混音、强混响录音能准确扒谱。
+- 不做小提琴指法、弓法、把位、PDF 导出和高级排版。
+- 不假装已经完成专业级多乐器音色分轨；当前是目标乐器频段/音域清理、主旋律筛选，以及可选的人声/伴奏分离。
 
-Upload an audio file you have the right to use. AI transcription may not be perfect, so review and correct notes before exporting.
+请上传你有权使用的音频。AI 转写可能出错，导出前请检查并修正音符。
 
-## Repository Layout
+## 目录结构
 
 ```text
 apps/
-  api/   FastAPI backend and audio processing pipeline
-  web/   Next.js frontend
-docs/    Product, architecture, API, setup, and testing notes
-scripts/ Developer helper scripts
-storage/ Local uploads, converted files, outputs, and job metadata
+  api/   FastAPI 后端和音频处理管线
+  web/   Next.js 前端
+docs/    产品、架构、API、设置和测试文档
+scripts/ 开发辅助脚本
+storage/ 本地上传、转换文件、输出文件和任务元数据
 ```
 
-## Requirements
+## 环境要求
 
-- Python 3.9 or newer
-- Node.js 20 or newer
-- `ffmpeg` installed and available in `PATH`
-- Spotify Basic Pitch Python package
-- `music21` Python package
+- Python 3.9 或更高版本
+- Node.js 20 或更高版本
+- `ffmpeg` 已安装并在 `PATH` 中可用
+- Spotify Basic Pitch Python 包
+- `music21` Python 包
 
-On macOS, install ffmpeg with:
+macOS 安装 ffmpeg：
 
 ```bash
 brew install ffmpeg
 ```
 
-## Backend Setup
+## 后端启动
 
-One-command setup:
+一键安装：
 
 ```bash
 ./scripts/setup.sh
 ```
 
-Manual backend setup:
+手动启动：
 
 ```bash
 cd apps/api
@@ -72,15 +75,28 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
-The backend uses local file storage under `storage/` by default. You can override it:
+默认本地存储目录是仓库根目录下的 `storage/`。可以覆盖：
 
 ```bash
 export MELODYSHEET_STORAGE_PATH=/absolute/path/to/storage
 ```
 
-`requirements.txt` installs Spotify Basic Pitch, `music21`, and the supporting audio stack. On macOS, Basic Pitch can use its bundled CoreML model. On Linux or other environments, if Basic Pitch reports that no model runtime can load, install a supported runtime such as `basic-pitch[onnx]` or `basic-pitch[tf]` and optionally set `MELODYSHEET_BASIC_PITCH_MODEL_PATH` to the packaged ONNX/TF model path.
+Basic Pitch 在 macOS 上通常可以使用自带 CoreML 模型。Linux 或其他环境如果模型运行时报错，可以安装 `basic-pitch[onnx]` 或 `basic-pitch[tf]`，并按需设置：
 
-## Frontend Setup
+```bash
+export MELODYSHEET_BASIC_PITCH_MODEL_PATH=/absolute/path/to/model
+```
+
+可选启用 Demucs 人声/伴奏二分离：
+
+```bash
+pip install demucs
+export MELODYSHEET_ENABLE_DEMUCS_SEPARATION=true
+```
+
+说明：当前 Demucs 只作为可选预处理，用于人声/伴奏方向的粗分离；它不是任意乐器的精确音色分轨。
+
+## 前端启动
 
 ```bash
 cd apps/web
@@ -88,44 +104,50 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+打开 [http://localhost:3000](http://localhost:3000)。
 
-If your API runs somewhere else:
+如果后端地址不是默认值：
 
 ```bash
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 npm run dev
 ```
 
-## Tests
+## 测试
 
-Backend:
+后端测试：
 
 ```bash
 cd apps/api
 pytest
 ```
 
-End-to-end API smoke test against a running backend:
+前端类型检查：
+
+```bash
+npm --prefix apps/web run typecheck
+```
+
+针对运行中的后端做端到端 API 烟测：
 
 ```bash
 python3 scripts/e2e-api-smoke.py http://127.0.0.1:8000
 ```
 
-Frontend practical checks are documented in [docs/testing.md](docs/testing.md). The MVP currently favors backend automated coverage because the audio-to-sheet pipeline is the critical product risk.
+更多手动检查见 [docs/testing.md](docs/testing.md)。
 
-## Troubleshooting
+## 常见问题
 
-- `ffmpeg is not installed or not available in PATH.`  
-  Install ffmpeg and restart the backend process.
+- `未找到 ffmpeg。请先安装 ffmpeg，并确认它在 PATH 中。`
+  安装 ffmpeg 后重新启动后端。
 
-- `Spotify Basic Pitch is not installed or could not be imported.`  
-  Activate the backend virtual environment and run `pip install -r requirements.txt`.
+- `未安装 Spotify Basic Pitch，或无法导入该依赖。`
+  激活后端虚拟环境，运行 `pip install -r requirements.txt`。
 
-- `Basic Pitch transcription failed.`  
-  Check `storage/outputs/{job_id}/basic_pitch.log`, confirm a Basic Pitch model runtime is installed, and try a shorter, clearer melody recording.
+- `Basic Pitch 转写失败。`
+  查看 `storage/outputs/{job_id}/basic_pitch.log`，确认 Basic Pitch 模型运行时可用，并尝试更短、更清晰的录音。
 
-- MusicXML download exists but staff rendering fails.  
-  Download the MusicXML file and inspect it in MuseScore or another notation app. The browser renderer may reject malformed or unsupported notation, but the backend will still expose the generated file.
+- 五线谱渲染失败，但 MusicXML 可以下载。
+  可以下载 MusicXML 后用 MuseScore 等软件检查；浏览器渲染器可能不支持某些生成内容。
 
-- Transcription quality is poor.  
-  Try a shorter clip under 60 seconds with a clear single-line melody, humming, singing, or solo instrument and less background accompaniment.
+- 扒谱准确性差。
+  尽量上传 60 秒以内、主旋律清楚、伴奏少、混响少的录音。这个版本已加入基础降噪、目标乐器音域过滤和单线主旋律筛选，但复杂混音仍然需要更强的分离模型和人工修正。

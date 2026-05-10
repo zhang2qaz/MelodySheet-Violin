@@ -1,52 +1,52 @@
-# Product Notes
+# 产品说明
 
-## Product Goal
+## 产品目标
 
-MelodySheet Violin helps users upload an audio file and automatically generate a readable melody sheet for violin or single-line melody practice. The MVP prioritizes a real audio-to-melody-sheet pipeline over visual polish.
+小提琴旋律谱帮助用户把自己有权使用的旋律录音转换成可编辑的练习谱。MVP 的核心价值是跑通真实处理管线：上传音频、提取主旋律、生成 MIDI、生成 MusicXML、展示五线谱和简谱，并允许用户修正后重新导出。
 
-## User Personas
+## 用户人群
 
-- Violin beginners who need simple practice material from a melody recording.
-- Music teachers who want a quick first draft of a melody sheet for students.
-- Parents helping children practice familiar melodies.
-- Students who want to turn humming, singing, or a solo melody clip into notes they can edit.
+- 小提琴初学者：需要把熟悉旋律变成练习材料。
+- 音乐老师：需要快速得到一份可编辑的旋律谱草稿。
+- 家长：帮助孩子把哼唱或课堂录音整理成谱子。
+- 学生：想把短旋律片段转换成可练习、可修改的谱面。
 
-## MVP Scope
+## MVP 范围
 
-- User-uploaded audio only.
-- Supported input formats: `mp3`, `wav`, `m4a`.
-- Local FastAPI processing jobs.
-- ffmpeg conversion to WAV.
-- Spotify Basic Pitch transcription to MIDI.
-- music21 MIDI parsing and MusicXML export.
-- Simplified numbered notation JSON.
-- Editable notes JSON.
-- Staff notation rendering in the frontend.
-- Note-sequence playback in the browser.
-- Basic note correction and regeneration.
-- Violin range warning for notes below G3.
+- 只处理用户上传的音频。
+- 支持 `mp3`、`wav`、`m4a`。
+- 支持选择目标乐器：小提琴、人声、长笛、钢琴、吉他、二胡。
+- 后端本地任务处理和 JSON 文件存储。
+- ffmpeg 转换 WAV。
+- 转写前做基础乐音降噪、目标乐器频段整理、音域过滤。
+- 可选 Demucs 人声/伴奏二分离。
+- Spotify Basic Pitch 音频转 MIDI。
+- music21 MIDI 解析、MusicXML 导出和简谱生成。
+- 前端渲染五线谱、简谱、音频和旋律播放。
+- 基础音符修正、删除、半音移调和重新生成。
+- 小提琴 G3 以下音符警告。
 
-## Non-Goals
+## 非目标
 
-- No QQ Music, Spotify streaming, Apple Music, NetEase Cloud Music, or external music platform integration.
-- No DRM bypassing.
-- No processing encrypted or protected streaming audio.
-- No claim that the product can legally transcribe any commercial song from a streaming platform.
-- No violin fingering, bowing marks, string suggestions, or advanced engraving in the MVP.
-- No full polyphonic score extraction promise.
+- 不接入 QQ 音乐、Spotify、Apple Music、网易云音乐或其他外部音乐平台。
+- 不绕过 DRM，不处理加密流媒体。
+- 不声称可以合法转写任意商业歌曲。
+- 不承诺复杂多声部或完整乐队混音的完美扒谱。
+- 不实现专业级多乐器音色分轨；当前版本只做基础预处理、目标音域筛选和可选人声/伴奏二分离。
+- 不实现小提琴指法、弓法、弦位、把位、PDF 导出或高级制谱编辑。
 
-## Copyright and Platform Limitations
+## 版权和平台限制
 
-The UI should tell users to upload audio they have the right to use. MelodySheet Violin is designed for user-provided files, such as personal recordings, lessons, humming, singing, or licensed material. The app should not imply that users can upload protected commercial songs without permission.
+界面必须提醒用户上传自己有权使用的音频。产品适合个人录音、课堂录音、哼唱、演唱、独奏练习片段或授权素材，不暗示用户可以上传受保护的商业音乐。
 
-## Future Roadmap
+## 后续路线
 
-- System audio capture with explicit user permission.
-- Authorized music platform integrations where licensing and API terms allow.
-- Better melody isolation for vocals or lead instruments.
-- Vocal/accompaniment separation.
-- Violin fingering suggestions.
-- Sheet editing UI.
-- PDF export.
-- Practice mode with looping and tempo control.
-- Teacher/student workflow for assignments and corrections.
+- 经用户授权的系统音频采集。
+- 在版权和 API 条款允许的前提下做授权音乐平台集成。
+- 更强的主旋律隔离和多乐器分离。
+- 声乐/伴奏分离质量提升。
+- 小提琴指法和弓法建议。
+- 更完整的谱面编辑器。
+- PDF 导出。
+- 练习模式、循环和变速播放。
+- 老师/学生作业和批改流程。

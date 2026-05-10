@@ -1,80 +1,91 @@
-# Testing
+# 测试说明
 
-## Automated Backend Tests
+## 后端自动化测试
 
-Run:
+运行：
 
 ```bash
 cd apps/api
 pytest
 ```
 
-## End-to-End API Smoke Test
+覆盖内容：
 
-Start the backend with ffmpeg available in `PATH`, then run:
+- 上传格式校验。
+- 不支持文件类型拒绝。
+- 空文件拒绝。
+- 任务创建和元数据创建。
+- 目标乐器参数保存。
+- ffmpeg 缺失时的错误处理。
+- MIDI 到 MusicXML 转换。
+- 简谱 JSON 生成。
+- 音域过滤和小提琴范围警告。
+- 重新生成接口。
+
+## 端到端 API 烟测
+
+启动后端，并确认 `ffmpeg`、Basic Pitch、`music21` 可用，然后运行：
 
 ```bash
 python3 scripts/e2e-api-smoke.py http://127.0.0.1:8000
 ```
 
-The script creates a short synthetic WAV, uploads it through `POST /api/jobs`, polls until the background job finishes, and downloads `melody.mid`, `melody.musicxml`, `numbered.json`, and `notes.json` into `storage/smoke-test/`.
+脚本会生成一个短的合成 WAV，上传到 `POST /api/jobs`，轮询任务完成，然后下载：
 
-Covered cases:
+- `melody.mid`
+- `melody.musicxml`
+- `numbered.json`
+- `notes.json`
 
-- Upload form validation.
-- Unsupported file type rejection.
-- Empty file rejection.
-- Job creation.
-- Job metadata creation.
-- ffmpeg missing dependency handling.
-- MIDI-to-MusicXML conversion with music21.
-- Numbered notation generation.
-- Regenerate endpoint.
+下载结果会保存到 `storage/smoke-test/`。
 
-## Manual Frontend QA Checklist
+## 前端手动 QA 清单
 
-- Upload form renders on the home page.
-- Drag-and-drop highlights the upload box.
-- Invalid file type shows a warning before upload.
-- Accepted file types are shown: `mp3`, `wav`, `m4a`.
-- Max file size and short-clip recommendation are visible.
-- Legal copy says users should upload audio they have the right to use.
-- Uploading creates a job and navigates to the job page.
-- Processing states show progress, step, and friendly message.
-- Failed jobs show: “Transcription failed. Try a shorter, clearer recording with less background accompaniment.”
-- Completed result shows original audio player when available.
-- MusicXML renders in OpenSheetMusicDisplay.
-- If MusicXML rendering fails, the page still provides a MusicXML download.
-- Numbered notation displays key, meter, tempo, and scale-degree rows.
-- Generated melody playback starts and stops.
-- Download links render for MIDI, MusicXML, numbered JSON, and editable notes JSON.
-- Note editor updates local state for pitch and duration changes.
-- Delete removes a note from the local table.
-- Transpose up/down changes pitch names and MIDI numbers.
-- Regenerate Sheet posts edited notes to the backend and reloads updated files.
-- Violin range warning appears when any note is below G3.
+- 首页为中文。
+- 上传框可以拖拽和选择文件。
+- 目标乐器下拉框可选择小提琴、人声、长笛、钢琴、吉他、二胡。
+- 非法文件类型会在上传前提示。
+- 页面显示支持格式、最大文件大小和短音频建议。
+- 页面提醒用户上传有权使用的音频。
+- 上传后创建任务并进入任务页。
+- 处理状态包含：上传、转换、降噪整理、识别旋律、生成谱面、完成、失败。
+- 失败任务显示中文说明，并建议使用更短、更清晰、伴奏更少的录音。
+- 完成页显示原始音频播放器。
+- MusicXML 能渲染五线谱；如果渲染失败，仍然能下载 MusicXML。
+- 简谱区域显示调号、拍号、速度和音级。
+- 播放按钮能播放生成旋律。
+- 下载按钮包含 MIDI、MusicXML、简谱 JSON、可编辑音符 JSON。
+- 音符表格能修改音高和时值。
+- 删除按钮能从本地表格删除音符。
+- 半音升降能更新音高名和 MIDI 编号。
+- 重新生成会调用后端并刷新结果。
+- 小提琴目标下，如果识别到 G3 以下音符，页面显示音域警告。
+- 结果摘要显示预处理说明和过滤音符数量。
 
-## Sample Audio Recommendations
+## 推荐测试音频
 
-Best MVP inputs:
+适合：
 
-- Clear violin melody.
-- Clear vocal melody.
-- Single instrument melody.
-- Humming or singing recording.
-- Short clip under 60 seconds with an obvious lead melody.
+- 清晰的小提琴独奏旋律。
+- 清晰人声、哼唱或演唱。
+- 单一乐器旋律。
+- 60 秒以内的短片段。
+- 主旋律明显、伴奏少的录音。
 
-Avoid:
+不适合：
 
-- Dense full-band mixes.
-- Heavy reverb or noise.
-- Long files.
-- Protected or encrypted platform audio.
+- 完整乐队混音。
+- 强鼓点、厚和弦、复杂伴奏。
+- 混响很重或噪声很大的录音。
+- 很长的文件。
+- 受保护或加密的平台音频。
 
-## Expected MVP Limitations
+## MVP 限制
 
-- Transcription may split or merge notes incorrectly.
-- Key detection is approximate.
-- Numbered notation is simplified.
-- Browser playback uses the extracted note sequence rather than a full MIDI synthesizer.
-- End-to-end audio processing requires local ffmpeg and Basic Pitch installation.
+- AI 转写可能拆分、合并或错判音符。
+- 当前预处理能减少部分噪声和音域外干扰，但不是专业修音或完整分轨。
+- 当前可选 Demucs 只做人声/伴奏方向的粗分离。
+- 调号分析是近似结果。
+- 简谱是练习用简化格式。
+- 浏览器播放使用音符序列合成，不是完整 MIDI 音源。
+- 端到端处理依赖本机 ffmpeg、Basic Pitch 和 music21。

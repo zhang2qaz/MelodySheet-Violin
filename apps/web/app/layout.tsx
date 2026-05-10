@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MelodySheet Violin",
-  description: "Turn a clear melody recording into an editable violin practice sheet.",
+  title: "小提琴旋律谱",
+  description: "把清晰的旋律录音转换成可编辑的小提琴练习谱。",
 };
 
 export default function RootLayout({
@@ -12,7 +12,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <body>{children}</body>
     </html>
   );

@@ -1,10 +1,13 @@
 export type JobStatus =
   | "uploaded"
   | "converting"
+  | "preprocessing"
   | "transcribing"
   | "postprocessing"
   | "completed"
   | "failed";
+
+export type TargetInstrument = "violin" | "vocal" | "flute" | "piano" | "guitar" | "erhu";
 
 export type JobResult = {
   original_audio_url: string | null;
@@ -15,6 +18,9 @@ export type JobResult = {
   detected_key: string | null;
   estimated_tempo: number | null;
   note_count: number | null;
+  target_instrument: TargetInstrument | null;
+  filtered_note_count: number;
+  preprocessing_summary: string | null;
   violin_range_warning: boolean;
   violin_range_message: string | null;
 };

@@ -13,7 +13,7 @@ def test_upload_rejects_unsupported_file_type(client):
     )
 
     assert response.status_code == 400
-    assert "Unsupported file type" in response.json()["detail"]
+    assert "不支持的文件类型" in response.json()["detail"]
 
 
 def test_upload_rejects_empty_file(client):
@@ -23,7 +23,7 @@ def test_upload_rejects_empty_file(client):
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Uploaded file is empty."
+    assert response.json()["detail"] == "上传的文件为空。"
 
 
 def test_upload_creates_job_and_metadata(client):
@@ -44,6 +44,22 @@ def test_upload_creates_job_and_metadata(client):
     assert metadata["input"]["original_filename"] == "melody.wav"
     assert metadata["input"]["extension"] == "wav"
     assert metadata["input"]["size_bytes"] == len(b"RIFFfake-data")
+    assert metadata["input"]["target_instrument"] == "violin"
+    assert metadata["result"]["target_instrument"] == "violin"
+
+
+def test_upload_accepts_target_instrument(client):
+    response = client.post(
+        "/api/jobs",
+        data={"target_instrument": "flute"},
+        files={"file": ("melody.wav", b"RIFFfake-data", "audio/wav")},
+    )
+
+    assert response.status_code == 200
+    metadata_path = job_file(response.json()["job_id"], settings)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["input"]["target_instrument"] == "flute"
+    assert metadata["result"]["target_instrument"] == "flute"
 
 
 def test_get_job_returns_metadata(client):

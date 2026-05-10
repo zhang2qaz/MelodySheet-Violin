@@ -1,51 +1,58 @@
-# Architecture
+# 架构说明
 
-## Frontend
+## 前端
 
-The frontend is a Next.js App Router application in `apps/web`.
+前端位于 `apps/web`，使用 Next.js App Router、TypeScript、Tailwind CSS 和 React。
 
-- `app/page.tsx` renders the upload workflow.
-- `app/jobs/[jobId]/page.tsx` renders processing and completed job states.
-- `components/` contains upload, status, notation, playback, numbered notation, downloads, and note editor components.
-- `lib/api.ts` centralizes backend calls.
-- `lib/music.ts` contains browser-safe note helpers for MIDI number, pitch name, and transposition.
+- `app/page.tsx`：中文上传首页。
+- `app/jobs/[jobId]/page.tsx`：处理状态页和结果页。
+- `components/`：上传、处理进度、五线谱渲染、简谱、播放、下载、摘要和音符编辑器。
+- `lib/api.ts`：统一封装后端请求。
+- `lib/music.ts`：浏览器端音高、MIDI 编号和半音移调工具。
 
-The frontend polls `GET /api/jobs/{job_id}` until the job is completed or failed. It does not invent successful output. Result views are shown only when backend-generated files are present.
+前端会轮询 `GET /api/jobs/{job_id}`，只有后端真实完成并返回文件链接后才展示结果，不伪造成功状态或谱面。
 
-## Backend
+## 后端
 
-The backend is a FastAPI app in `apps/api`.
+后端位于 `apps/api`，使用 FastAPI 和本地文件存储。
 
-- `main.py` exposes HTTP endpoints.
-- `app/config.py` loads environment configuration.
-- `app/job_store.py` creates folders and reads/writes job metadata.
-- `app/music_processing.py` owns ffmpeg conversion, Basic Pitch transcription, music21 parsing/export, numbered notation, and regeneration from edited notes.
-- `app/models.py` defines request/response schemas.
+- `main.py`：HTTP API、上传校验、CORS、文件安全访问。
+- `app/config.py`：环境变量配置。
+- `app/job_store.py`：任务目录和 JSON 元数据读写。
+- `app/music_processing.py`：ffmpeg 转换、基础降噪、可选 Demucs 分离、Basic Pitch 转写、music21 后处理、简谱生成和重新生成。
+- `app/models.py`：请求/响应模型。
 
-## Processing Pipeline
+## 处理管线
 
-1. Upload is validated and saved to `storage/uploads/{job_id}/original.{ext}`.
-2. Job metadata is created in `storage/jobs/{job_id}.json`.
-3. Background processing updates status and progress:
-   - `uploaded`
-   - `converting`
-   - `transcribing`
-   - `postprocessing`
-   - `completed`
-   - `failed`
-4. ffmpeg converts the original file to mono WAV at `storage/converted/{job_id}/input.wav`.
-5. Spotify Basic Pitch transcribes the WAV and writes MIDI to `storage/outputs/{job_id}/melody.mid`.
-6. music21 parses MIDI, estimates tempo and key, extracts notes, writes MusicXML, writes editable notes JSON, and writes numbered notation JSON.
-7. Completed jobs expose safe file URLs through `GET /api/files/{job_id}/{filename}`.
+1. 用户上传 `mp3`、`wav` 或 `m4a`，并选择目标乐器。
+2. 后端校验格式、大小和空文件。
+3. 原始文件保存到 `storage/uploads/{job_id}/original.{ext}`。
+4. 任务元数据保存到 `storage/jobs/{job_id}.json`。
+5. `ffmpeg` 转换为单声道 WAV：`storage/converted/{job_id}/input.wav`。
+6. 进入 `preprocessing`：按目标乐器做高通/低通、频谱降噪、动态归一化，输出 `clean.wav`。
+7. 如果启用 `MELODYSHEET_ENABLE_DEMUCS_SEPARATION=true` 且本机安装 `demucs`，会先尝试人声/伴奏二分离。
+8. Basic Pitch 对清理后的音频生成 `melody.mid`。
+9. music21 解析 MIDI，估计速度和调号。
+10. 后端按目标乐器音域过滤明显不合适的音符，并从同时发声的音符中优先保留一条主旋律线。
+11. 输出 `melody.mid`、`melody.musicxml`、`numbered.json`、`notes.json`。
 
-Basic Pitch stdout/stderr is captured to `storage/outputs/{job_id}/basic_pitch.log` for local troubleshooting. The log is not exposed through the public file endpoint.
+任务状态：
 
-## Storage Structure
+- `uploaded`
+- `converting`
+- `preprocessing`
+- `transcribing`
+- `postprocessing`
+- `completed`
+- `failed`
+
+## 存储结构
 
 ```text
 storage/
   uploads/{job_id}/original.{ext}
   converted/{job_id}/input.wav
+  converted/{job_id}/clean.wav
   outputs/{job_id}/melody.mid
   outputs/{job_id}/melody.musicxml
   outputs/{job_id}/numbered.json
@@ -53,11 +60,11 @@ storage/
   jobs/{job_id}.json
 ```
 
-## Known Limitations
+## 已知限制
 
-- Basic Pitch is strongest with clear lead melodies; dense accompaniment may produce noisy output.
-- Basic Pitch MIDI does not always provide a reliable confidence score, so the backend derives confidence from MIDI velocity when available.
-- Key analysis is approximate and deterministic, not a full harmonic analysis.
-- Numbered notation is simplified and currently optimized for readable practice output, not publication-grade engraving.
-- ffmpeg and Basic Pitch are local dependencies and must be installed before end-to-end transcription works.
-- Basic Pitch model loading depends on the local runtime. macOS can use CoreML; Linux deployments should install a supported runtime such as ONNX or TensorFlow and can override the model path with `MELODYSHEET_BASIC_PITCH_MODEL_PATH`.
+- Basic Pitch 对清晰主旋律最有效，复杂伴奏仍可能产生错误音符。
+- 当前“音色分轨”是基础预处理和可选人声/伴奏分离，不是完整多乐器分离。
+- MIDI 置信度来自可用的 MIDI velocity，不能等同于真实模型概率。
+- 调号分析和简谱映射是确定性的近似结果。
+- MusicXML 适合练习谱草稿，不是出版级排版。
+- 端到端处理依赖本机 `ffmpeg`、Basic Pitch、`music21`，可选依赖 Demucs。

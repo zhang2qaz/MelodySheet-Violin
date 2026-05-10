@@ -45,11 +45,11 @@ export function NumberedNotationView({ notation }: { notation: NumberedNotation 
     <section className="border border-ink/10 bg-white/65 p-5 shadow-soft">
       <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-sm font-semibold uppercase text-staff">Numbered notation</p>
-          <h2 className="text-2xl font-semibold text-ink">Simplified practice notation</h2>
+          <p className="text-sm font-semibold uppercase text-staff">简谱</p>
+          <h2 className="text-2xl font-semibold text-ink">简化练习谱</h2>
         </div>
         <div className="text-sm text-ink/65">
-          Key {notation.key} · {notation.meter} · {notation.tempo} BPM
+          调号 {notation.key} · 拍号 {notation.meter} · 速度 {notation.tempo} BPM
         </div>
       </div>
 

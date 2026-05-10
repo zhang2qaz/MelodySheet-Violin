@@ -12,6 +12,7 @@ from app.music_processing import (
     convert_audio_to_wav,
     generate_numbered_notation,
     postprocess_midi_to_outputs,
+    prepare_notes_for_target,
 )
 
 
@@ -21,7 +22,7 @@ def test_ffmpeg_missing_failure(monkeypatch, tmp_path):
     with pytest.raises(DependencyMissingError) as exc:
         convert_audio_to_wav(tmp_path / "input.mp3", tmp_path / "input.wav")
 
-    assert "ffmpeg is not installed" in exc.value.user_message
+    assert "未找到 ffmpeg" in exc.value.user_message
 
 
 def test_numbered_notation_generation():
@@ -55,6 +56,47 @@ def test_numbered_notation_generation():
     assert numbered["tempo"] == 120
     assert numbered["notes"][0]["scale_degree"] == "1"
     assert numbered["notes"][1]["scale_degree"] == "2"
+
+
+def test_prepare_notes_for_target_selects_single_melody_line():
+    notes = [
+        {
+            "index": 1,
+            "start_time": 0.0,
+            "end_time": 0.5,
+            "pitch": "C4",
+            "midi_number": 60,
+            "duration_seconds": 0.5,
+            "duration_label": "quarter",
+            "confidence": 0.5,
+        },
+        {
+            "index": 2,
+            "start_time": 0.02,
+            "end_time": 0.5,
+            "pitch": "E5",
+            "midi_number": 76,
+            "duration_seconds": 0.5,
+            "duration_label": "quarter",
+            "confidence": 0.95,
+        },
+        {
+            "index": 3,
+            "start_time": 0.5,
+            "end_time": 1.0,
+            "pitch": "D5",
+            "midi_number": 74,
+            "duration_seconds": 0.5,
+            "duration_label": "quarter",
+            "confidence": 0.9,
+        },
+    ]
+
+    prepared, removed = prepare_notes_for_target(notes, "violin")
+
+    assert removed == 1
+    assert [item["pitch"] for item in prepared] == ["E5", "D5"]
+    assert [item["index"] for item in prepared] == [1, 2]
 
 
 def test_midi_to_musicxml_conversion(tmp_path):
@@ -130,7 +172,8 @@ def test_regenerate_endpoint(client):
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "completed"
-    assert payload["result"]["note_count"] == 2
+    assert payload["result"]["note_count"] == 1
+    assert payload["result"]["filtered_note_count"] == 1
     assert payload["result"]["violin_range_warning"] is True
-    assert "below standard violin range" in payload["result"]["violin_range_message"]
+    assert "低于标准小提琴音域" in payload["result"]["violin_range_message"]
     assert Path(output_dir(job_id, settings) / "melody.musicxml").exists()

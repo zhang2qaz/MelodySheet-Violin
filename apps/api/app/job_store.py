@@ -56,6 +56,7 @@ def create_job_metadata(
     original_filename: str,
     extension: str,
     size_bytes: int,
+    target_instrument: str = "violin",
     config: Settings = settings,
 ) -> dict[str, Any]:
     created_at = now_iso()
@@ -70,12 +71,16 @@ def create_job_metadata(
             "original_filename": original_filename,
             "extension": extension,
             "size_bytes": size_bytes,
+            "target_instrument": target_instrument,
         },
         "result": {
             **result_urls(job_id, extension),
             "detected_key": None,
             "estimated_tempo": None,
             "note_count": None,
+            "target_instrument": target_instrument,
+            "filtered_note_count": 0,
+            "preprocessing_summary": None,
             "violin_range_warning": False,
             "violin_range_message": None,
         },

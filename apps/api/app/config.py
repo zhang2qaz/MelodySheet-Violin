@@ -34,6 +34,9 @@ class Settings:
             if origin.strip()
         ]
         self.basic_pitch_model_path = os.getenv("MELODYSHEET_BASIC_PITCH_MODEL_PATH")
+        self.enable_demucs_separation = os.getenv(
+            "MELODYSHEET_ENABLE_DEMUCS_SEPARATION", "false"
+        ).lower() in {"1", "true", "yes"}
 
 
 settings = Settings()

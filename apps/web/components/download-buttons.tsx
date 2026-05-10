@@ -6,10 +6,10 @@ const DOWNLOADS: Array<{
   key: keyof JobResult;
   label: string;
 }> = [
-  { key: "midi_url", label: "Download MIDI" },
-  { key: "musicxml_url", label: "Download MusicXML" },
-  { key: "numbered_json_url", label: "Download numbered JSON" },
-  { key: "notes_url", label: "Download notes JSON" },
+  { key: "midi_url", label: "下载 MIDI" },
+  { key: "musicxml_url", label: "下载 MusicXML" },
+  { key: "numbered_json_url", label: "下载简谱 JSON" },
+  { key: "notes_url", label: "下载可编辑音符 JSON" },
 ];
 
 export function DownloadButtons({ result }: { result: JobResult }) {

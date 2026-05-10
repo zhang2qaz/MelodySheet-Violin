@@ -4,6 +4,7 @@ import type {
   NotesPayload,
   NumberedNotation,
   EditableNote,
+  TargetInstrument,
 } from "@/lib/types";
 
 export const API_BASE_URL =
@@ -25,7 +26,7 @@ async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<R
   } catch (error) {
     if (error instanceof TypeError) {
       throw new Error(
-        `Cannot reach the backend API at ${API_BASE_URL}. Make sure the backend is running and reload the page.`,
+        `无法连接后端 API（${API_BASE_URL}）。请确认后端服务正在运行，然后刷新页面。`,
       );
     }
     throw error;
@@ -38,15 +39,19 @@ async function parseJsonOrThrow<T>(response: Response): Promise<T> {
     const message =
       payload && typeof payload.detail === "string"
         ? payload.detail
-        : "Request failed. Please try again.";
+        : "请求失败，请重试。";
     throw new Error(message);
   }
   return payload as T;
 }
 
-export async function createJob(file: File): Promise<CreateJobResponse> {
+export async function createJob(
+  file: File,
+  targetInstrument: TargetInstrument = "violin",
+): Promise<CreateJobResponse> {
   const body = new FormData();
   body.append("file", file);
+  body.append("target_instrument", targetInstrument);
   const response = await apiFetch(`${API_BASE_URL}/api/jobs`, {
     method: "POST",
     body,

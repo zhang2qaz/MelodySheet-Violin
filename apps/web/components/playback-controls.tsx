@@ -53,8 +53,8 @@ export function PlaybackControls({ notes }: { notes: EditableNote[] }) {
     <section className="border border-ink/10 bg-white/65 p-5 shadow-soft">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-sm font-semibold uppercase text-staff">Playback</p>
-          <h2 className="text-2xl font-semibold text-ink">Generated melody</h2>
+          <p className="text-sm font-semibold uppercase text-staff">播放</p>
+          <h2 className="text-2xl font-semibold text-ink">生成的旋律</h2>
         </div>
         <button
           type="button"
@@ -67,7 +67,7 @@ export function PlaybackControls({ notes }: { notes: EditableNote[] }) {
           ) : (
             <Play className="h-4 w-4" aria-hidden="true" />
           )}
-          {playing ? "Stop playback" : "Play melody"}
+          {playing ? "停止播放" : "播放旋律"}
         </button>
       </div>
     </section>

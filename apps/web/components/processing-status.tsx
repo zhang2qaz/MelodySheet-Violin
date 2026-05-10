@@ -1,15 +1,26 @@
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import type { JobResponse, JobStatus } from "@/lib/types";
 
-const STEPS: JobStatus[] = ["uploaded", "converting", "transcribing", "postprocessing", "completed"];
+const STEPS: JobStatus[] = ["uploaded", "converting", "preprocessing", "transcribing", "postprocessing", "completed"];
 
 const STATUS_MESSAGES: Record<JobStatus, string> = {
-  uploaded: "Uploading audio...",
-  converting: "Converting audio format...",
-  transcribing: "Detecting melody...",
-  postprocessing: "Building sheet music...",
-  completed: "Preparing downloads...",
-  failed: "Transcription failed. Try a shorter, clearer recording with less background accompaniment.",
+  uploaded: "正在上传音频...",
+  converting: "正在转换音频格式...",
+  preprocessing: "正在做基础降噪和目标乐器频段整理...",
+  transcribing: "正在识别旋律...",
+  postprocessing: "正在生成乐谱...",
+  completed: "正在准备下载文件...",
+  failed: "转写失败。请尝试更短、更清晰、背景伴奏更少的录音。",
+};
+
+const STEP_LABELS: Record<JobStatus, string> = {
+  uploaded: "已上传",
+  converting: "格式转换",
+  preprocessing: "降噪整理",
+  transcribing: "旋律识别",
+  postprocessing: "乐谱生成",
+  completed: "已完成",
+  failed: "失败",
 };
 
 export function ProcessingStatus({ job }: { job: JobResponse }) {
@@ -20,8 +31,8 @@ export function ProcessingStatus({ job }: { job: JobResponse }) {
     <section className="border border-ink/10 bg-white/65 p-6 shadow-soft">
       <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-sm font-semibold uppercase text-staff">Processing job</p>
-          <h1 className="mt-2 text-3xl font-semibold text-ink">Building your melody sheet</h1>
+          <p className="text-sm font-semibold uppercase text-staff">处理任务</p>
+          <h1 className="mt-2 text-3xl font-semibold text-ink">正在生成你的旋律谱</h1>
           <p className="mt-3 text-base text-ink/70">{job.error || STATUS_MESSAGES[job.status]}</p>
         </div>
         <div className="flex items-center gap-2 text-sm font-semibold text-ink/70">
@@ -53,7 +64,7 @@ export function ProcessingStatus({ job }: { job: JobResponse }) {
                   done ? "bg-staff" : isFailed && index === activeIndex ? "bg-rosin" : "bg-ink/18"
                 }`}
               />
-              <span className={done ? "font-semibold text-ink" : "text-ink/55"}>{step}</span>
+              <span className={done ? "font-semibold text-ink" : "text-ink/55"}>{STEP_LABELS[step]}</span>
             </div>
           );
         })}

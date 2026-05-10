@@ -65,7 +65,7 @@ export function JobPageClient({ jobId }: { jobId: string }) {
         }
       } catch (err) {
         if (!cancelled) {
-          setLoadingError(err instanceof Error ? err.message : "Could not load this job.");
+          setLoadingError(err instanceof Error ? err.message : "无法加载这个任务。");
         }
       }
     }
@@ -89,7 +89,7 @@ export function JobPageClient({ jobId }: { jobId: string }) {
       setJob(updated);
       await loadResultFiles(updated);
     } catch (err) {
-      setLoadingError(err instanceof Error ? err.message : "Regeneration failed.");
+      setLoadingError(err instanceof Error ? err.message : "重新生成失败。");
       await loadJob().catch(() => undefined);
     } finally {
       setRegenerating(false);
@@ -105,10 +105,10 @@ export function JobPageClient({ jobId }: { jobId: string }) {
         <div>
           <Link href="/" className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-staff">
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            New upload
+            重新上传
           </Link>
-          <h1 className="text-3xl font-semibold text-ink">MelodySheet Violin</h1>
-          <p className="mt-2 text-sm text-ink/65">Job {jobId}</p>
+          <h1 className="text-3xl font-semibold text-ink">小提琴旋律谱</h1>
+          <p className="mt-2 text-sm text-ink/65">任务 {jobId}</p>
         </div>
       </header>
 
@@ -121,7 +121,7 @@ export function JobPageClient({ jobId }: { jobId: string }) {
 
       {!job ? (
         <section className="border border-ink/10 bg-white/65 p-6 shadow-soft">
-          <p className="text-ink/70">Loading job status...</p>
+          <p className="text-ink/70">正在加载任务状态...</p>
         </section>
       ) : (
         <ProcessingStatus job={job} />
@@ -129,7 +129,7 @@ export function JobPageClient({ jobId }: { jobId: string }) {
 
       {job?.status === "failed" ? (
         <section className="border border-rosin/25 bg-rosin/10 p-5 text-sm leading-6 text-rosin">
-          Transcription failed. Try a shorter, clearer recording with less background accompaniment.
+          转写失败。请尝试更短、更清晰、背景伴奏更少的录音。
         </section>
       ) : null}
 
@@ -139,13 +139,13 @@ export function JobPageClient({ jobId }: { jobId: string }) {
 
           <section className="border border-ink/10 bg-white/65 p-5 shadow-soft">
             <div className="mb-4">
-              <p className="text-sm font-semibold uppercase text-staff">Original audio</p>
-              <h2 className="text-2xl font-semibold text-ink">Uploaded recording</h2>
+              <p className="text-sm font-semibold uppercase text-staff">原始音频</p>
+              <h2 className="text-2xl font-semibold text-ink">已上传的录音</h2>
             </div>
             {result.original_audio_url ? (
               <audio className="w-full" controls src={apiUrl(result.original_audio_url)} />
             ) : (
-              <p className="text-sm text-ink/65">Original audio is not available.</p>
+              <p className="text-sm text-ink/65">原始音频暂不可用。</p>
             )}
           </section>
 
