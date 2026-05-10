@@ -19,6 +19,19 @@ export function apiUrl(path: string | null | undefined): string {
   return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(
+        `Cannot reach the backend API at ${API_BASE_URL}. Make sure the backend is running and reload the page.`,
+      );
+    }
+    throw error;
+  }
+}
+
 async function parseJsonOrThrow<T>(response: Response): Promise<T> {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -34,7 +47,7 @@ async function parseJsonOrThrow<T>(response: Response): Promise<T> {
 export async function createJob(file: File): Promise<CreateJobResponse> {
   const body = new FormData();
   body.append("file", file);
-  const response = await fetch(`${API_BASE_URL}/api/jobs`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/jobs`, {
     method: "POST",
     body,
   });
@@ -42,24 +55,24 @@ export async function createJob(file: File): Promise<CreateJobResponse> {
 }
 
 export async function getJob(jobId: string): Promise<JobResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/jobs/${jobId}`, {
     cache: "no-store",
   });
   return parseJsonOrThrow<JobResponse>(response);
 }
 
 export async function fetchNotes(url: string): Promise<NotesPayload> {
-  const response = await fetch(apiUrl(url), { cache: "no-store" });
+  const response = await apiFetch(apiUrl(url), { cache: "no-store" });
   return parseJsonOrThrow<NotesPayload>(response);
 }
 
 export async function fetchNumberedNotation(url: string): Promise<NumberedNotation> {
-  const response = await fetch(apiUrl(url), { cache: "no-store" });
+  const response = await apiFetch(apiUrl(url), { cache: "no-store" });
   return parseJsonOrThrow<NumberedNotation>(response);
 }
 
 export async function regenerateJob(jobId: string, notes: EditableNote[]): Promise<JobResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/regenerate`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/jobs/${jobId}/regenerate`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
