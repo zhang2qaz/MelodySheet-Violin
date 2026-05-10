@@ -24,6 +24,7 @@ storage/uploads/*
 storage/converted/*
 storage/outputs/*
 storage/jobs/*
+storage/smoke-test/*
 !storage/uploads/.gitkeep
 !storage/converted/.gitkeep
 !storage/outputs/.gitkeep

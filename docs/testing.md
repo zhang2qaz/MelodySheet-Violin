@@ -9,6 +9,16 @@ cd apps/api
 pytest
 ```
 
+## End-to-End API Smoke Test
+
+Start the backend with ffmpeg available in `PATH`, then run:
+
+```bash
+python3 scripts/e2e-api-smoke.py http://127.0.0.1:8000
+```
+
+The script creates a short synthetic WAV, uploads it through `POST /api/jobs`, polls until the background job finishes, and downloads `melody.mid`, `melody.musicxml`, `numbered.json`, and `notes.json` into `storage/smoke-test/`.
+
 Covered cases:
 
 - Upload form validation.

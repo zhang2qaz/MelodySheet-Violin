@@ -55,6 +55,14 @@ brew install ffmpeg
 
 ## Backend Setup
 
+One-command setup:
+
+```bash
+./scripts/setup.sh
+```
+
+Manual backend setup:
+
 ```bash
 cd apps/api
 python3 -m venv .venv
@@ -95,6 +103,12 @@ Backend:
 ```bash
 cd apps/api
 pytest
+```
+
+End-to-end API smoke test against a running backend:
+
+```bash
+python3 scripts/e2e-api-smoke.py http://127.0.0.1:8000
 ```
 
 Frontend practical checks are documented in [docs/testing.md](docs/testing.md). The MVP currently favors backend automated coverage because the audio-to-sheet pipeline is the critical product risk.
