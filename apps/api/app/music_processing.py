@@ -985,6 +985,57 @@ def process_job_v2(
     except Exception:
         pass  # spectrogram is decorative; never block the job on it
 
+    # Detect chord progression (decorative analysis, written as chords.json).
+    chords_payload: list[dict[str, Any]] = []
+    try:
+        from app.chord_detect import detect_chords
+        chords_payload = detect_chords(audio, sample_rate, beats)
+        write_json(outputs_path / "chords.json", {"chords": chords_payload})
+    except Exception:
+        pass
+
+    # Guitar tablature suggestion — for any melody we can map to standard
+    # tuning. Useful even for non-guitar target instruments (users may want
+    # to play a violin line on guitar).
+    try:
+        from app.guitar_tab import midi_to_tab, render_ascii_tab
+        annotated_tab = midi_to_tab(quantized)
+        write_json(outputs_path / "tab.json", {"notes": annotated_tab})
+        (outputs_path / "tab.txt").write_text(
+            render_ascii_tab(annotated_tab) + "\n", encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+    # Drum transcription — runs on the demucs drums stem when available,
+    # else on the full mix. Output: list of (time, instrument) hits.
+    drum_hits: list[dict[str, Any]] = []
+    try:
+        from app.drum_transcribe import transcribe_drums
+        from app.audio_io import load_audio_mono
+
+        # Locate a drums stem produced by the earlier separation pass.
+        drums_audio = audio
+        drums_sr = sample_rate
+        demucs_drums_path = work_dir / "demucs_6s"
+        if demucs_drums_path.exists():
+            for path in demucs_drums_path.glob("**/drums.wav"):
+                drums_audio, drums_sr = load_audio_mono(path)
+                break
+        drum_hits = transcribe_drums(drums_audio, drums_sr)
+        write_json(outputs_path / "drums.json", {"hits": drum_hits})
+    except Exception:
+        pass
+
+    # Song structure / section detection (A-B-A-B pattern labels).
+    sections_payload: list[dict[str, Any]] = []
+    try:
+        from app.section_detect import detect_sections
+        sections_payload = detect_sections(audio, sample_rate)
+        write_json(outputs_path / "sections.json", {"sections": sections_payload})
+    except Exception:
+        pass
+
     if not (outputs_path / "melody.musicxml").exists() or not (outputs_path / "melody.mid").exists():
         raise PipelineError("后处理失败，缺少多轨乐谱输出文件。")
 
@@ -1000,6 +1051,9 @@ def process_job_v2(
         "detected_instruments": detected_instruments,
         "demucs_stems_used": stems_used,
         "per_track_outputs": per_track_paths,
+        "chord_count": len(chords_payload),
+        "drum_hit_count": len(drum_hits),
+        "section_count": len(sections_payload),
         "violin_range_warning": raw_violin_warning or has_violin_range_warning(quantized),
         "violin_range_message": violin_range_message(quantized) if not raw_violin_warning else "检测到部分音符低于标准小提琴音域，已在生成谱子前过滤。你也可以尝试升调或选择其他目标乐器。",
     }

@@ -44,6 +44,14 @@ class JobResult(BaseModel):
     spectrogram_url: Optional[str] = None
     lily_url: Optional[str] = None
     abc_url: Optional[str] = None
+    chords_url: Optional[str] = None
+    chord_count: int = 0
+    tab_url: Optional[str] = None
+    tab_txt_url: Optional[str] = None
+    drums_url: Optional[str] = None
+    drum_hit_count: int = 0
+    sections_url: Optional[str] = None
+    section_count: int = 0
     detected_key: Optional[str] = None
     estimated_tempo: Optional[int] = None
     estimated_meter: Optional[str] = None

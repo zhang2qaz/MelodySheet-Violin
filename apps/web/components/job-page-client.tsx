@@ -8,6 +8,11 @@ import type { EditableNote, JobResponse, NumberedNotation } from "@/lib/types";
 import { DownloadButtons } from "@/components/download-buttons";
 import { MusicXmlViewer } from "@/components/musicxml-viewer";
 import { SpectrogramView } from "@/components/spectrogram-view";
+import { ChordsView } from "@/components/chords-view";
+import { TabView } from "@/components/tab-view";
+import { DrumsView } from "@/components/drums-view";
+import { SectionsView } from "@/components/sections-view";
+import { PianoRollEditor } from "@/components/piano-roll-editor";
 import { NoteEditor } from "@/components/note-editor";
 import { NumberedNotationView } from "@/components/numbered-notation-view";
 import { PlaybackControls } from "@/components/playback-controls";
@@ -154,9 +159,14 @@ export function JobPageClient({ jobId }: { jobId: string }) {
             )}
           </section>
 
+          <SectionsView sectionsUrl={result.sections_url} />
           <MusicXmlViewer musicXmlUrl={result.musicxml_url} />
+          <ChordsView chordsUrl={result.chords_url} />
+          <TabView tabUrl={result.tab_url} />
+          <DrumsView drumsUrl={result.drums_url} />
           <SpectrogramView spectrogramUrl={result.spectrogram_url} />
           <NumberedNotationView notation={numberedNotation} />
+          <PianoRollEditor notes={notes} tempo={tempo} onChange={setNotes} />
           <PlaybackControls notes={notes} />
           <DownloadButtons result={result} />
           <NoteEditor

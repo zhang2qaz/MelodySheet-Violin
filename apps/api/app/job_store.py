@@ -50,6 +50,11 @@ def result_urls(job_id: str, extension: str) -> dict[str, Any]:
         "spectrogram_url": f"/api/files/{job_id}/spectrogram.png",
         "lily_url": f"/api/files/{job_id}/melody.ly",
         "abc_url": f"/api/files/{job_id}/melody.abc",
+        "chords_url": f"/api/files/{job_id}/chords.json",
+        "tab_url": f"/api/files/{job_id}/tab.json",
+        "tab_txt_url": f"/api/files/{job_id}/tab.txt",
+        "drums_url": f"/api/files/{job_id}/drums.json",
+        "sections_url": f"/api/files/{job_id}/sections.json",
     }
 
 

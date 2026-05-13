@@ -30,6 +30,14 @@ export type JobResult = {
   spectrogram_url: string | null;
   lily_url: string | null;
   abc_url: string | null;
+  chords_url: string | null;
+  chord_count?: number;
+  tab_url: string | null;
+  tab_txt_url: string | null;
+  drums_url: string | null;
+  drum_hit_count?: number;
+  sections_url: string | null;
+  section_count?: number;
   detected_key: string | null;
   estimated_tempo: number | null;
   estimated_meter: string | null;
@@ -71,6 +79,19 @@ export type EditableNote = {
 
 export type NotesPayload = {
   notes: EditableNote[];
+};
+
+export type ChordEvent = {
+  start_time: number;
+  end_time: number;
+  chord: string;
+  root: string;
+  quality: string;
+  confidence: number;
+};
+
+export type ChordsPayload = {
+  chords: ChordEvent[];
 };
 
 export type NumberedNote = {
