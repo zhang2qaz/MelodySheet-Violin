@@ -38,8 +38,10 @@ DisableReadyPage=no
 LicenseFile=
 
 [Languages]
+; Chocolatey's Inno Setup install only ships the default (English) language
+; file. The app's UI strings (AppName, group, shortcuts) already contain
+; Chinese text via constants, so the wizard chrome being English is fine.
 Name: "english"; MessagesFile: "compiler:Default.isl"
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

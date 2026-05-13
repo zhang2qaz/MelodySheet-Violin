@@ -108,8 +108,15 @@ if (-not $SkipBackendBuild) {
     Push-Location $repoRoot
     try {
         & $venvPy -m PyInstaller --clean --noconfirm (Join-Path $installerDir "melody-sheet.spec")
+        if ($LASTEXITCODE -ne 0) {
+            throw "PyInstaller exited with code $LASTEXITCODE."
+        }
     } finally {
         Pop-Location
+    }
+    $frozenExe = Join-Path $repoRoot "dist\MelodySheet\MelodySheet.exe"
+    if (-not (Test-Path $frozenExe)) {
+        throw "PyInstaller finished but did not produce $frozenExe."
     }
 }
 

@@ -77,13 +77,16 @@ hiddenimports = [
     "app.pitch_crepe",
 ]
 
-# music21 ships a `corpus` directory; PyInstaller must pull it.
+# music21 ships a `corpus` directory; older versions had musicxml/xsd too.
+# Only include what actually exists at build time so PyInstaller doesn't bail.
 try:
     import music21
 
     music21_root = Path(music21.__file__).parent
-    datas.append((str(music21_root / "corpus"), "music21/corpus"))
-    datas.append((str(music21_root / "musicxml" / "xsd"), "music21/musicxml/xsd"))
+    for sub in ("corpus", "musicxml/xsd"):
+        candidate = music21_root / Path(sub)
+        if candidate.exists():
+            datas.append((str(candidate), f"music21/{sub}"))
 except Exception:
     pass
 
