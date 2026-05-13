@@ -33,10 +33,29 @@ def _resource_root() -> Path:
 
 
 def _appdata_dir() -> Path:
-    appdata = os.getenv("APPDATA") or os.getenv("XDG_DATA_HOME") or str(Path.home() / ".melodysheet")
-    base = Path(appdata) / "MelodySheet"
+    """Platform-appropriate writable directory for logs + storage."""
+    if sys.platform == "darwin":
+        # macOS convention: per-user app data under ~/Library/Application Support
+        base = Path.home() / "Library" / "Application Support" / "MelodySheet"
+    elif os.name == "nt":
+        appdata = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        base = Path(appdata) / "MelodySheet"
+    else:
+        # Linux: XDG_DATA_HOME or ~/.local/share
+        xdg = os.getenv("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+        base = Path(xdg) / "MelodySheet"
     base.mkdir(parents=True, exist_ok=True)
     return base
+
+
+def _log_dir() -> Path:
+    """macOS keeps logs separate from data; other OSes co-locate."""
+    if sys.platform == "darwin":
+        path = Path.home() / "Library" / "Logs" / "MelodySheet"
+    else:
+        path = _appdata_dir()
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 class _Tee:
@@ -76,7 +95,7 @@ class _Tee:
 
 
 def _install_log_capture() -> Path:
-    log_path = _appdata_dir() / "launch.log"
+    log_path = _log_dir() / "launch.log"
     try:
         log_file = log_path.open("a", encoding="utf-8")
     except Exception:

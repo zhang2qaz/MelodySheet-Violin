@@ -1,0 +1,74 @@
+name: Build macOS installer
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Attach the .dmg to a draft GitHub Release"
+        required: false
+        default: "false"
+
+jobs:
+  build:
+    # macos-14 is Apple Silicon (arm64). To also build for Intel Macs add a
+    # matrix entry for macos-13 (last Intel runner).
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Run macOS build pipeline
+        run: bash installer/build_macos.sh
+
+      - name: Verify DMG exists
+        run: |
+          dmg="installer/out/MelodySheet-macOS.dmg"
+          if [[ ! -f "$dmg" ]]; then
+            echo "ERROR: $dmg not produced"
+            ls -la installer/out || true
+            exit 1
+          fi
+          ls -lh "$dmg"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MelodySheet-macOS
+          path: installer/out/MelodySheet-macOS.dmg
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create draft release
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: installer/out/MelodySheet-macOS.dmg
+          name: MelodySheet macOS ${{ github.run_number }}
+          body: |
+            Automated macOS installer build (run #${{ github.run_number }}).
+
+            Download `MelodySheet-macOS.dmg`, open it, drag MelodySheet.app to
+            Applications. First launch you may need to right-click → Open to
+            bypass Gatekeeper (this build isn't notarized).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

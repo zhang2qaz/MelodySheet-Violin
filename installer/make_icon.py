@@ -107,6 +107,53 @@ def _draw_icon(size: int) -> Image.Image:
     return img
 
 
+def _write_icns(frames_by_size: dict[int, Image.Image], icns_path: Path) -> bool:
+    """Use the system's `iconutil` (macOS only) to build a proper .icns.
+    Falls back to writing a multi-resolution PNG if iconutil isn't available
+    (e.g. on Linux GH runners). PyInstaller accepts both for `icon=`.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    if shutil.which("iconutil") is None:
+        # Best-effort fallback: save the 1024 PNG as icns substitute. macOS
+        # PyInstaller hooks will accept a PNG and convert it via sips.
+        frames_by_size[max(frames_by_size)].save(icns_path.with_suffix(".png"), format="PNG")
+        return False
+
+    iconset = Path(tempfile.mkdtemp()) / "MelodySheet.iconset"
+    iconset.mkdir(parents=True, exist_ok=True)
+    apple_required = [
+        (16, "icon_16x16.png"),
+        (32, "icon_16x16@2x.png"),
+        (32, "icon_32x32.png"),
+        (64, "icon_32x32@2x.png"),
+        (128, "icon_128x128.png"),
+        (256, "icon_128x128@2x.png"),
+        (256, "icon_256x256.png"),
+        (512, "icon_256x256@2x.png"),
+        (512, "icon_512x512.png"),
+        (1024, "icon_512x512@2x.png"),
+    ]
+    for sz, fname in apple_required:
+        if sz not in frames_by_size:
+            # Resize from nearest available size
+            base = frames_by_size[max(frames_by_size, key=lambda s: -abs(s - sz))]
+            resized = base.resize((sz, sz), Image.LANCZOS)
+        else:
+            resized = frames_by_size[sz]
+        resized.save(iconset / fname, format="PNG")
+    result = subprocess.run(
+        ["iconutil", "-c", "icns", str(iconset), "-o", str(icns_path)],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        print(f"iconutil failed: {result.stderr}")
+        return False
+    return True
+
+
 def main() -> int:
     frames = [_draw_icon(sz) for sz in SIZES]
     largest = frames[-1]
@@ -117,6 +164,18 @@ def main() -> int:
         append_images=frames[:-1],
     )
     print(f"Wrote {OUTPUT} ({OUTPUT.stat().st_size} bytes, {len(SIZES)} sizes)")
+
+    # Also build .icns for macOS bundles. Generate Apple's required sizes.
+    extra_sizes = [16, 32, 64, 128, 256, 512, 1024]
+    big_frames = {sz: _draw_icon(sz) for sz in extra_sizes}
+    big_frames.update({sz: img for sz, img in zip(SIZES, frames)})
+    icns_path = OUTPUT.with_suffix(".icns")
+    if _write_icns(big_frames, icns_path):
+        print(f"Wrote {icns_path} ({icns_path.stat().st_size} bytes)")
+    else:
+        print(f"Note: iconutil unavailable; .icns generation skipped. "
+              f"GH Actions macos-* runners have it; this only matters when "
+              f"building from a non-mac host.")
     return 0
 
 

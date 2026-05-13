@@ -1,6 +1,11 @@
-# MelodySheet Windows 安装包
+# MelodySheet 安装包（Windows + macOS）
 
-把整个产品（FastAPI 后端 + 静态前端 + ffmpeg）封装成单个 `MelodySheet-Setup.exe` 安装文件。安装后用户双击桌面图标，浏览器自动打开 `http://127.0.0.1:8765/`。无需手动安装 Python、Node.js、ffmpeg。
+把整个产品（FastAPI 后端 + 静态前端 + ffmpeg）封装成原生安装包。安装后用户双击应用，浏览器自动打开 `http://127.0.0.1:8765/`。无需手动安装 Python、Node.js、ffmpeg。
+
+| 平台 | 产物 | 单 tag push 触发 |
+|---|---|---|
+| **Windows** | `MelodySheet-Setup.exe`（Inno Setup 自解压安装器，~150 MB）| `Build Windows installer` workflow |
+| **macOS** (Apple Silicon) | `MelodySheet-macOS.dmg`（拖入 Applications 即可）| `Build macOS installer` workflow |
 
 ## 两种构建路径
 
@@ -13,13 +18,47 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-或者在 GitHub 仓库 Actions 标签页手动触发 **Build Windows installer**。
+**两个 workflow 都会被同时触发**（Windows + macOS），各 15-25 分钟产出对应安装包。也可以在 Actions 标签页手动 dispatch 单独某个平台。
 
-跑 15–25 分钟，artifact 在该次运行页面下载 `MelodySheet-Setup.exe`（也可勾选 `release=true` 自动建 draft release）。
+工作流定义：
+- [`.github/workflows/build-windows-installer.yml`](../.github/workflows/build-windows-installer.yml) → Windows
+- [`.github/workflows/build-macos-installer.yml`](../.github/workflows/build-macos-installer.yml) → macOS
 
-工作流定义：[`.github/workflows/build-windows-installer.yml`](../.github/workflows/build-windows-installer.yml)。
+### B-macOS. 本地（Mac 机器）构建
 
-### B. 本地（Windows 机器）构建
+**一次性准备**：
+```bash
+brew install python@3.11 node ffmpeg create-dmg
+```
+
+**构建**（在终端，仓库根目录）：
+
+```bash
+bash installer/build_macos.sh
+```
+
+跑约 10-15 分钟。完成后 `installer/out/MelodySheet-macOS.dmg` 就是发布产物。可选环境变量：
+
+- `SKIP_FFMPEG=1` 复用已下载的 ffmpeg
+- `SKIP_WEB=1` 复用已 build 的 `apps/web/out`
+- `SKIP_BACKEND=1` 跳过 PyInstaller（只重做 DMG 打包）
+
+**关于 macOS 签名 / 公证**：
+
+未签名的 .app 用户首次打开会被 Gatekeeper 拦：
+```
+"MelodySheet" 无法打开,因为无法验证开发者。
+```
+解决方法：右键 → **打开** → 在弹窗里再点一次"打开"。从此就能正常用了。
+
+正式发布建议买 Apple Developer Program (¥688/年) 做 code-sign + notarize，能让用户 Gatekeeper 0 警告启动。流程：
+```bash
+codesign --deep --force --options runtime --sign 'Developer ID Application: NAME' dist/MelodySheet.app
+xcrun notarytool submit installer/out/MelodySheet-macOS.dmg --keychain-profile mynotary --wait
+xcrun stapler staple installer/out/MelodySheet-macOS.dmg
+```
+
+### B-Windows. 本地（Windows 机器）构建
 
 **一次性准备**：
 - Python 3.11 x64（务必 x64）— [python.org](https://www.python.org/downloads/windows/) 装并勾选 "Add to PATH"
