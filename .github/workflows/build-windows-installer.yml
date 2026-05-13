@@ -60,18 +60,30 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Create draft release
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.release == 'true'
+      - name: Publish to GitHub Release
+        # Always publish on tag push (so china users can use ghproxy mirror).
+        # Manual dispatch still respects the `release` input.
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release == 'true')
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          draft: false
+          prerelease: false
           files: installer/out/MelodySheet-Setup.exe
-          name: MelodySheet Windows ${{ github.run_number }}
+          name: MelodySheet ${{ github.ref_name }} (Windows)
+          tag_name: ${{ github.ref_name }}
           body: |
-            Automated Windows installer build (run #${{ github.run_number }}).
+            ## 小提琴旋律谱 · Windows 安装包
 
-            Download `MelodySheet-Setup.exe` and double-click to install. The app
-            runs locally on `http://127.0.0.1:8765/` and auto-opens your default
-            browser.
+            下载 `MelodySheet-Setup.exe` 双击安装。应用本地运行在
+            `http://127.0.0.1:8765/`,首次启动会自动开浏览器。
+
+            ### 国内下载加速
+
+            如果你在中国大陆，直连 GitHub 速度慢，可以加 ghproxy 镜像前缀：
+            `https://ghproxy.com/<原下载链接>`
+
+            ### 卡死 / 启动崩溃？
+            从 CMD 跑 `MelodySheet.exe`，或者打开
+            `%APPDATA%\MelodySheet\launch.log` 看日志。
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
