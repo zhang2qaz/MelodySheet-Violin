@@ -101,11 +101,19 @@ hiddenimports += [
     "app.audio_io",
     "app.transcribe_mono",
     "app.transcribe_poly",
+    "app.transcribe_mt3",
     "app.rhythm",
     "app.score_builder",
     "app.instrument_id",
     "app.separation",
     "app.pitch_crepe",
+    "app.spectrogram",
+    "app.chord_detect",
+    "app.guitar_tab",
+    "app.drum_transcribe",
+    "app.section_detect",
+    "app.multi_instrument",
+    "app.user_profile",
 ]
 
 # uvicorn auto-detector specifically loads protocol modules by name at runtime.

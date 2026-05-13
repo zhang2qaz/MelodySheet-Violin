@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional  # noqa: F401
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -52,6 +52,8 @@ class JobResult(BaseModel):
     drum_hit_count: int = 0
     sections_url: Optional[str] = None
     section_count: int = 0
+    available_stems: Dict[str, str] = Field(default_factory=dict)
+    multi_track_summary: Dict[str, Any] = Field(default_factory=dict)
     detected_key: Optional[str] = None
     estimated_tempo: Optional[int] = None
     estimated_meter: Optional[str] = None

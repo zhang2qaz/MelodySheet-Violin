@@ -905,6 +905,24 @@ def process_job_v2(
     target_stem_path, stems_used = _run_six_stem_separation_optional(
         wav_path, work_dir, target_instrument
     )
+    # Surface ALL stems (not just the target) so the result page can let
+    # users play / download each isolated track individually.
+    available_stems: dict[str, str] = {}
+    demucs_6s_root = work_dir / "demucs_6s"
+    if demucs_6s_root.exists():
+        for stem_name in ("vocals", "drums", "bass", "guitar", "piano", "other"):
+            matches = sorted(demucs_6s_root.glob(f"**/{stem_name}.wav"))
+            if matches:
+                # Copy into outputs dir under a public name so the file-route
+                # serves it; demucs writes inside the working dir which we
+                # don't expose directly.
+                target_path = outputs_path / "stems" / f"{stem_name}.wav"
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    shutil.copyfile(matches[0], target_path)
+                    available_stems[stem_name] = f"/api/files/{job_id}/stems/{stem_name}.wav"
+                except Exception:
+                    pass
 
     if target_stem_path != wav_path:
         try:
@@ -922,18 +940,29 @@ def process_job_v2(
         raw_notes = transcribe_monophonic(target_audio, sample_rate, target_instrument)
         transcription_method = "pyin-monophonic"
     else:
-        # Polyphonic targets keep going through Basic Pitch but with tuned thresholds.
+        # Polyphonic: try MT3 first (if enabled & installed), then fall back to
+        # Basic Pitch with tuned thresholds. Basic Pitch reads directly from a
+        # WAV so we materialise the target stem first.
         from app.transcribe_poly import transcribe_polyphonic_to_notes
 
-        # Write target stem to a transient wav for Basic Pitch to consume.
         try:
             from app.audio_io import write_wav
             stem_for_bp = work_dir / "target_stem_for_bp.wav"
             write_wav(target_audio, stem_for_bp, sample_rate)
         except Exception:
             stem_for_bp = target_stem_path if target_stem_path != wav_path else wav_path
-        raw_notes = transcribe_polyphonic_to_notes(stem_for_bp, target_instrument)
+
+        raw_notes = []
         transcription_method = "basic-pitch-tuned"
+        try:
+            from app.transcribe_mt3 import is_mt3_available, transcribe_with_mt3
+            if is_mt3_available():
+                raw_notes = transcribe_with_mt3(stem_for_bp)
+                transcription_method = "mt3"
+        except Exception:
+            raw_notes = []
+        if not raw_notes:
+            raw_notes = transcribe_polyphonic_to_notes(stem_for_bp, target_instrument)
 
     if not raw_notes:
         raise PipelineError(
@@ -1036,6 +1065,53 @@ def process_job_v2(
     except Exception:
         pass
 
+    # Multi-instrument simultaneous transcription — for each Demucs stem,
+    # run the appropriate transcriber, then produce a per-stem MusicXML/MIDI
+    # so the user gets one score per instrument out of the same mix.
+    multi_track_summary: dict[str, dict[str, Any]] = {}
+    stems_dir = outputs_path / "stems"
+    if stems_dir.exists() and any(stems_dir.iterdir()):
+        try:
+            from app.multi_instrument import transcribe_all_stems
+            per_stem = transcribe_all_stems(stems_dir, sample_rate_hint=sample_rate)
+            for stem_name, stem_notes in per_stem.items():
+                if not stem_notes:
+                    multi_track_summary[stem_name] = {"note_count": 0}
+                    continue
+                target_for_stem = {
+                    "vocals": "vocal",
+                    "bass": "bass",
+                    "piano": "piano",
+                    "guitar": "guitar",
+                    "other": "violin",
+                }.get(stem_name, "violin")
+                try:
+                    stem_quantized = quantize_notes_to_grid(
+                        stem_notes, tempo_bpm=tempo_bpm, beats=beats,
+                    )
+                    stem_track = Track(
+                        target_instrument=target_for_stem,
+                        notes=stem_quantized,
+                        detected_key=detected_key,
+                        tempo_bpm=int(round(tempo_bpm)),
+                        meter=meter,
+                    )
+                    stem_score = build_multitrack_score(
+                        [stem_track], title=f"{stem_name} (auto-separated)",
+                    )
+                    stem_output_dir = outputs_path / "tracks"
+                    stem_output_dir.mkdir(parents=True, exist_ok=True)
+                    write_score_outputs(stem_score, stem_output_dir, prefix=stem_name)
+                    multi_track_summary[stem_name] = {
+                        "note_count": len(stem_quantized),
+                        "musicxml": f"/api/files/{job_id}/tracks/{stem_name}.musicxml",
+                        "midi": f"/api/files/{job_id}/tracks/{stem_name}.mid",
+                    }
+                except Exception:
+                    multi_track_summary[stem_name] = {"note_count": len(stem_notes)}
+        except Exception:
+            pass
+
     if not (outputs_path / "melody.musicxml").exists() or not (outputs_path / "melody.mid").exists():
         raise PipelineError("后处理失败，缺少多轨乐谱输出文件。")
 
@@ -1054,6 +1130,8 @@ def process_job_v2(
         "chord_count": len(chords_payload),
         "drum_hit_count": len(drum_hits),
         "section_count": len(sections_payload),
+        "available_stems": available_stems,
+        "multi_track_summary": multi_track_summary,
         "violin_range_warning": raw_violin_warning or has_violin_range_warning(quantized),
         "violin_range_message": violin_range_message(quantized) if not raw_violin_warning else "检测到部分音符低于标准小提琴音域，已在生成谱子前过滤。你也可以尝试升调或选择其他目标乐器。",
     }

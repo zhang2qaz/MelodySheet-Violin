@@ -7,6 +7,7 @@ import sys
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, Optional
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -280,6 +281,23 @@ def get_file(job_id: str, filename: str) -> FileResponse:
     return FileResponse(path)
 
 
+@app.get("/api/files/{job_id}/stems/{filename}")
+def get_stem_file(job_id: str, filename: str) -> FileResponse:
+    validate_job_id(job_id)
+    if "/" in filename or "\\" in filename or filename.startswith("."):
+        raise HTTPException(status_code=404, detail="未找到文件。")
+    if not filename.endswith(".wav"):
+        raise HTTPException(status_code=404, detail="未找到文件。")
+    try:
+        read_job(job_id, settings)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="未找到处理任务。") from None
+    path = output_dir(job_id, settings) / "stems" / filename
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="未找到文件。")
+    return FileResponse(path)
+
+
 @app.get("/api/files/{job_id}/tracks/{filename}")
 def get_track_file(job_id: str, filename: str) -> FileResponse:
     validate_job_id(job_id)
@@ -319,7 +337,36 @@ def regenerate_job(job_id: str, payload: RegenerateRequest) -> RegenerateRespons
     except PipelineError as exc:
         raise HTTPException(status_code=400, detail=exc.user_message) from exc
 
+    # Record this regeneration as user-correction signal for the profile.
+    try:
+        from app.user_profile import record_correction
+        target = result.get("target_instrument") or "violin"
+        record_correction(
+            target,
+            [note.model_dump() for note in payload.notes],
+            detected_key=result.get("detected_key"),
+            meter=result.get("estimated_meter"),
+            tempo_bpm=result.get("estimated_tempo"),
+        )
+    except Exception:
+        pass
+
     return RegenerateResponse(job_id=job_id, status="completed", result=result)
+
+
+@app.get("/api/profile")
+def get_profile() -> dict:
+    """Return the user's stored preferences. UI displays this so the user
+    knows what the system has learned about their style."""
+    from app.user_profile import read_profile
+    return read_profile()
+
+
+@app.delete("/api/profile")
+def delete_profile(target_instrument: Optional[str] = None) -> dict:
+    from app.user_profile import reset_profile
+    reset_profile(target_instrument)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

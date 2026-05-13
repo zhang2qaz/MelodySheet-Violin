@@ -314,6 +314,23 @@ def transcribe_monophonic(
         # the next segment) from a pYIN artefact mid-sustain (no valley).
         segment_rms_mean = float(np.mean(rms[start_frame:end_frame])) if end_frame > start_frame else 0.0
 
+        # Pitch-bend / glissando detection: measure how much the segment's
+        # f0 deviates from its median pitch. If the trajectory shows a
+        # monotonic rise/fall of more than 30 cents, mark the note with a
+        # bend curve. Useful for violin slides, vocal portamento, guitar bends.
+        bend_amount_cents = 0.0
+        bend_direction: str | None = None
+        if len(valid) >= 4:
+            segment_midi = 12.0 * np.log2(np.maximum(valid, 1e-9) / 440.0) + 69.0
+            # Compare first quartile median vs last quartile median
+            q = max(1, len(segment_midi) // 4)
+            head_midi = float(np.median(segment_midi[:q]))
+            tail_midi = float(np.median(segment_midi[-q:]))
+            delta_semitones = tail_midi - head_midi
+            bend_amount_cents = round(delta_semitones * 100.0, 1)
+            if abs(bend_amount_cents) >= 30:
+                bend_direction = "up" if bend_amount_cents > 0 else "down"
+
         notes.append(
             {
                 "start_frame": int(start_frame),
@@ -324,10 +341,10 @@ def transcribe_monophonic(
                 "pitch": _midi_to_name(midi_number),
                 "midi_number": midi_number,
                 "duration_seconds": round(duration_seconds, 4),
-                # duration_label placeholder; rhythm.py will assign a real value after
-                # tempo-locked quantization.
                 "duration_label": "quarter",
                 "confidence": round(max(0.0, min(confidence, 1.0)), 3),
+                "pitch_bend_cents": bend_amount_cents,
+                "pitch_bend_direction": bend_direction,
             }
         )
 

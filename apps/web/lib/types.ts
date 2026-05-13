@@ -38,6 +38,8 @@ export type JobResult = {
   drum_hit_count?: number;
   sections_url: string | null;
   section_count?: number;
+  available_stems: Record<string, string>;
+  multi_track_summary?: Record<string, { note_count: number; musicxml?: string; midi?: string }>;
   detected_key: string | null;
   estimated_tempo: number | null;
   estimated_meter: string | null;
