@@ -85,9 +85,16 @@ if (-not $SkipFfmpegDownload) {
 
 if (-not $SkipWebBuild) {
     Section "Building frontend (Next.js static export)"
-    Push-Location $webDir
+    # The lockfile lives at repo root because apps/web is a npm workspace.
+    # Install from root so node_modules end up at apps/web/node_modules.
+    Push-Location $repoRoot
     try {
         npm ci
+    } finally {
+        Pop-Location
+    }
+    Push-Location $webDir
+    try {
         $env:NEXT_OUTPUT = "export"
         $env:NEXT_PUBLIC_API_BASE_URL = ""
         npm run build
