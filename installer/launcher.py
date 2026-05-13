@@ -2,7 +2,11 @@
 
 Started by the Inno Setup-installed shortcut. Boots a single FastAPI process
 on 127.0.0.1, opens the default browser at it, and keeps running until the
-user closes the console window or quits via the tray menu.
+user closes the console window.
+
+All stdout/stderr is tee'd to %APPDATA%/MelodySheet/launch.log so that even
+if the console window flashes shut on an early crash we still have a trace
+to debug from.
 """
 from __future__ import annotations
 
@@ -11,6 +15,7 @@ import socket
 import sys
 import threading
 import time
+import traceback
 import webbrowser
 from pathlib import Path
 
@@ -27,30 +32,83 @@ def _resource_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def _ensure_runtime_paths() -> None:
-    """Make sure runtime dirs (storage, jobs) live under the user's profile
-    rather than Program Files (which is read-only without admin)."""
+def _appdata_dir() -> Path:
     appdata = os.getenv("APPDATA") or os.getenv("XDG_DATA_HOME") or str(Path.home() / ".melodysheet")
     base = Path(appdata) / "MelodySheet"
-    storage = base / "storage"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+class _Tee:
+    """Write to both the original stream (console) and a file."""
+
+    def __init__(self, stream, log_file) -> None:
+        self._stream = stream
+        self._log = log_file
+
+    def write(self, data: str) -> int:
+        try:
+            n = self._stream.write(data)
+        except Exception:
+            n = 0
+        try:
+            self._log.write(data)
+            self._log.flush()
+        except Exception:
+            pass
+        return n
+
+    def flush(self) -> None:
+        try:
+            self._stream.flush()
+        except Exception:
+            pass
+        try:
+            self._log.flush()
+        except Exception:
+            pass
+
+    def isatty(self) -> bool:
+        try:
+            return self._stream.isatty()
+        except Exception:
+            return False
+
+
+def _install_log_capture() -> Path:
+    log_path = _appdata_dir() / "launch.log"
+    try:
+        log_file = log_path.open("a", encoding="utf-8")
+    except Exception:
+        return log_path
+    sys.stdout = _Tee(sys.stdout, log_file)
+    sys.stderr = _Tee(sys.stderr, log_file)
+    import datetime
+
+    log_file.write("\n" + "=" * 70 + "\n")
+    log_file.write(f"MelodySheet launch  {datetime.datetime.now().isoformat()}\n")
+    log_file.write(f"frozen={_running_frozen()}  python={sys.version.split()[0]}  cwd={os.getcwd()}\n")
+    log_file.write(f"_MEIPASS={getattr(sys, '_MEIPASS', '(not frozen)')}\n")
+    log_file.write("=" * 70 + "\n")
+    log_file.flush()
+    return log_path
+
+
+def _ensure_runtime_paths() -> None:
+    storage = _appdata_dir() / "storage"
     storage.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("MELODYSHEET_STORAGE_PATH", str(storage))
 
-    # Bundled ffmpeg lives next to the frozen exe; surface it on PATH so the
-    # subprocess call in music_processing finds it.
     if _running_frozen():
         bundled = _resource_root() / "ffmpeg"
         if bundled.exists():
             os.environ["PATH"] = str(bundled) + os.pathsep + os.environ.get("PATH", "")
 
-    # CORS isn't strictly needed when serving frontend same-origin, but allow
-    # the bundled frontend to talk to the API explicitly anyway.
     os.environ.setdefault(
         "MELODYSHEET_CORS_ORIGINS",
         f"http://127.0.0.1:{DEFAULT_PORT},http://localhost:{DEFAULT_PORT}",
     )
 
-    # Point the static frontend resolver at the bundle.
     web_dir = _resource_root() / "web"
     if web_dir.exists():
         os.environ.setdefault("MELODYSHEET_WEB_DIR", str(web_dir))
@@ -80,29 +138,52 @@ def _open_browser_when_ready(port: int) -> None:
 
 
 def main() -> int:
-    _ensure_runtime_paths()
-    port = _pick_port(DEFAULT_PORT)
+    log_path = _install_log_capture()
+    try:
+        print(f"[launcher] log -> {log_path}")
+        _ensure_runtime_paths()
+        port = _pick_port(DEFAULT_PORT)
 
-    # When frozen, the bundled `apps/api` is the importable working dir.
-    if _running_frozen():
-        api_dir = _resource_root() / "apps" / "api"
-        if api_dir.exists():
-            sys.path.insert(0, str(api_dir))
+        if _running_frozen():
+            api_dir = _resource_root() / "apps" / "api"
+            if api_dir.exists():
+                sys.path.insert(0, str(api_dir))
+                print(f"[launcher] inserted {api_dir} onto sys.path")
+            else:
+                print(f"[launcher] WARNING: expected api dir not found at {api_dir}")
 
-    import uvicorn
+        print("[launcher] importing uvicorn ...")
+        import uvicorn
+        print("[launcher] importing main:app ...")
+        # Import the app object explicitly so any ImportError surfaces here
+        # (rather than disappearing inside uvicorn's worker bootstrap).
+        from main import app
 
-    threading.Thread(target=_open_browser_when_ready, args=(port,), daemon=True).start()
+        threading.Thread(target=_open_browser_when_ready, args=(port,), daemon=True).start()
 
-    print(f"MelodySheet running on http://127.0.0.1:{port}/")
-    print("Close this window to stop the app.")
-    uvicorn.run(
-        "main:app",
-        host="127.0.0.1",
-        port=port,
-        log_level="warning",
-        access_log=False,
-    )
-    return 0
+        print(f"\nMelodySheet running on http://127.0.0.1:{port}/")
+        print("Close this window to stop the app.\n")
+        uvicorn.run(
+            app,
+            host="127.0.0.1",
+            port=port,
+            log_level="warning",
+            access_log=False,
+        )
+        return 0
+    except SystemExit:
+        raise
+    except BaseException:
+        traceback.print_exc()
+        sys.stderr.write(
+            "\n[launcher] FATAL — see " + str(log_path) + " for full trace.\n"
+            "Press Enter to exit...\n"
+        )
+        try:
+            input()
+        except EOFError:
+            pass
+        return 1
 
 
 if __name__ == "__main__":

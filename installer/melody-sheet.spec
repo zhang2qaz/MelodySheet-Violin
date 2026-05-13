@@ -5,24 +5,24 @@
 #
 # Output: dist/MelodySheet/MelodySheet.exe + dist/MelodySheet/_internal/...
 # Inno Setup then wraps this directory into a one-file Windows installer.
-# (See installer/melody-sheet.iss and installer/build.ps1.)
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
-# `__file__` isn't defined when PyInstaller runs a spec, so resolve via argv.
-SPEC_DIR = Path(SPECPATH).resolve()  # noqa: F821  — PyInstaller injects SPECPATH
+from PyInstaller.utils.hooks import collect_all, collect_submodules
+
+SPEC_DIR = Path(SPECPATH).resolve()  # noqa: F821 — PyInstaller injects SPECPATH
 REPO_ROOT = SPEC_DIR.parent
 API_ROOT = REPO_ROOT / "apps" / "api"
 WEB_OUT = REPO_ROOT / "apps" / "web" / "out"
 FFMPEG_DIR = REPO_ROOT / "installer" / "vendored" / "ffmpeg"
 
-# Bundled data files (web frontend + optional ffmpeg). When ffmpeg isn't
-# vendored the librosa fallback in music_processing.py still handles common
-# formats, but bundling makes mp3/m4a uploads first-class.
+# --- Data files bundled into _MEIPASS ---
 datas = []
+binaries = []
+hiddenimports = []
+
 if WEB_OUT.exists():
     datas.append((str(WEB_OUT), "web"))
 else:
@@ -33,39 +33,62 @@ else:
     )
 if FFMPEG_DIR.exists():
     datas.append((str(FFMPEG_DIR), "ffmpeg"))
-# Include the api package source so `from app...` imports resolve at runtime.
+
+# Bundle our own backend source files
 datas.append((str(API_ROOT / "app"), "apps/api/app"))
 datas.append((str(API_ROOT / "main.py"), "apps/api"))
 
-# Heavy native libraries that pyinstaller's analyser sometimes misses.
-hiddenimports = [
-    "uvicorn.logging",
-    "uvicorn.protocols",
-    "uvicorn.protocols.http",
-    "uvicorn.protocols.http.auto",
-    "uvicorn.protocols.websockets",
-    "uvicorn.protocols.websockets.auto",
-    "uvicorn.lifespan",
-    "uvicorn.lifespan.on",
+# --- Use collect_all for heavy third-party deps with lots of lazy imports ---
+# This is the "shotgun" approach: pulls in EVERY submodule + data file of each
+# package. Bundle gets bigger but no more random ImportError at runtime.
+for pkg in (
     "librosa",
-    "librosa.core",
-    "librosa.feature",
-    "librosa.onset",
-    "librosa.beat",
-    "librosa.effects",
     "soundfile",
     "scipy",
-    "scipy.signal",
-    "scipy.fft",
     "numpy",
+    "numba",
     "music21",
-    "music21.stream",
-    "music21.note",
-    "music21.musicxml.m21ToXml",
     "basic_pitch",
-    "basic_pitch.inference",
     "sklearn",
-    "sklearn.utils._weight_vector",
+    "fastapi",
+    "starlette",
+    "pydantic",
+    "uvicorn",
+    "anyio",
+    "h11",
+    "httptools",
+    "websockets",
+    "watchfiles",
+    "click",
+    "audioread",
+    "soxr",
+    "pooch",
+    "resampy",
+    "lazy_loader",
+    "joblib",
+    "msgpack",
+    "decorator",
+    "llvmlite",
+    "onnxruntime",
+):
+    try:
+        sub_datas, sub_binaries, sub_hidden = collect_all(pkg)
+        datas += sub_datas
+        binaries += sub_binaries
+        hiddenimports += sub_hidden
+        print(f"[spec] collect_all({pkg!r}) +{len(sub_datas)} datas, "
+              f"+{len(sub_binaries)} binaries, +{len(sub_hidden)} hidden")
+    except Exception as exc:
+        print(f"[spec] collect_all({pkg!r}) skipped: {exc}", file=sys.stderr)
+
+# Application-internal submodules (small, but explicit so launcher's
+# `from main import app` doesn't fail).
+hiddenimports += [
+    "main",
+    "app",
+    "app.config",
+    "app.job_store",
+    "app.models",
     "app.music_processing",
     "app.audio_io",
     "app.transcribe_mono",
@@ -77,26 +100,15 @@ hiddenimports = [
     "app.pitch_crepe",
 ]
 
-# music21 ships a `corpus` directory; older versions had musicxml/xsd too.
-# Only include what actually exists at build time so PyInstaller doesn't bail.
-try:
-    import music21
+# uvicorn auto-detector specifically loads protocol modules by name at runtime.
+hiddenimports += collect_submodules("uvicorn")
 
-    music21_root = Path(music21.__file__).parent
-    for sub in ("corpus", "musicxml/xsd"):
-        candidate = music21_root / Path(sub)
-        if candidate.exists():
-            datas.append((str(candidate), f"music21/{sub}"))
-except Exception:
-    pass
-
-# librosa ships .npz tables; PyInstaller hooks usually cover these.
 block_cipher = None
 
 a = Analysis(
     [str(SPEC_DIR / "launcher.py")],
     pathex=[str(API_ROOT)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
@@ -125,8 +137,10 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    console=True,  # keep console visible so users can see startup logs
+    # UPX can mangle some scientific libraries' DLLs (numpy, scipy, onnxruntime)
+    # and cause "DLL load failed" at runtime. Safer to leave them untouched.
+    upx=False,
+    console=True,
     icon=str(SPEC_DIR / "melody-sheet.ico") if (SPEC_DIR / "melody-sheet.ico").exists() else None,
 )
 
@@ -136,7 +150,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name="MelodySheet",
 )
