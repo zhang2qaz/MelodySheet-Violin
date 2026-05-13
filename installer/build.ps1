@@ -12,7 +12,7 @@
       3. Vendor ffmpeg.exe (downloaded once into installer\vendored\ffmpeg)
       4. Run `npm ci` + static export for the frontend
       5. PyInstaller bundles backend + frontend + ffmpeg into dist\MelodySheet
-      6. Inno Setup compiles dist\MelodySheet → installer\out\MelodySheet-Setup.exe
+      6. Inno Setup compiles dist\MelodySheet -> installer\out\MelodySheet-Setup.exe
 
     Prerequisites (one-time install on the build machine):
       - Python 3.11 x64 in PATH
@@ -50,7 +50,7 @@ foreach ($cmd in @("python", "npm")) {
     }
 }
 if (-not $SkipBackendBuild -and -not (Test-Path $IsccPath)) {
-    Write-Warning "Inno Setup compiler not found at $IsccPath. The .exe step will be skipped — adjust -IsccPath or install Inno Setup 6."
+    Write-Warning "Inno Setup compiler not found at $IsccPath. The .exe step will be skipped -- adjust -IsccPath or install Inno Setup 6."
 }
 
 Section "Preparing Python venv"
