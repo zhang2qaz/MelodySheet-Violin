@@ -9,6 +9,18 @@ export type JobStatus =
 
 export type TargetInstrument = "violin" | "vocal" | "flute" | "piano" | "guitar" | "erhu";
 
+export type DetectedInstrument = {
+  instrument: string;
+  confidence: number;
+  source?: string | null;
+  reason?: string | null;
+};
+
+export type TrackOutput = {
+  musicxml: string | null;
+  midi: string | null;
+};
+
 export type JobResult = {
   original_audio_url: string | null;
   midi_url: string | null;
@@ -17,10 +29,15 @@ export type JobResult = {
   notes_url: string | null;
   detected_key: string | null;
   estimated_tempo: number | null;
+  estimated_meter: string | null;
   note_count: number | null;
   target_instrument: TargetInstrument | null;
   filtered_note_count: number;
   preprocessing_summary: string | null;
+  transcription_method: string | null;
+  detected_instruments: DetectedInstrument[];
+  demucs_stems_used: string[];
+  per_track_outputs: Record<string, TrackOutput>;
   violin_range_warning: boolean;
   violin_range_message: string | null;
 };

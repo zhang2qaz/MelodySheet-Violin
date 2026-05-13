@@ -9,8 +9,18 @@ const STATUS_MESSAGES: Record<JobStatus, string> = {
   preprocessing: "正在做基础降噪和目标乐器频段整理...",
   transcribing: "正在识别旋律...",
   postprocessing: "正在生成乐谱...",
-  completed: "正在准备下载文件...",
+  completed: "转写完成，下面是识别结果。",
   failed: "转写失败。请尝试更短、更清晰、背景伴奏更少的录音。",
+};
+
+const STATUS_HEADINGS: Record<JobStatus, string> = {
+  uploaded: "正在生成你的旋律谱",
+  converting: "正在生成你的旋律谱",
+  preprocessing: "正在生成你的旋律谱",
+  transcribing: "正在生成你的旋律谱",
+  postprocessing: "正在生成你的旋律谱",
+  completed: "你的旋律谱已经生成",
+  failed: "旋律谱生成失败",
 };
 
 const STEP_LABELS: Record<JobStatus, string> = {
@@ -32,7 +42,7 @@ export function ProcessingStatus({ job }: { job: JobResponse }) {
       <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase text-staff">处理任务</p>
-          <h1 className="mt-2 text-3xl font-semibold text-ink">正在生成你的旋律谱</h1>
+          <h1 className="mt-2 text-3xl font-semibold text-ink">{STATUS_HEADINGS[job.status]}</h1>
           <p className="mt-3 text-base text-ink/70">{job.error || STATUS_MESSAGES[job.status]}</p>
         </div>
         <div className="flex items-center gap-2 text-sm font-semibold text-ink/70">

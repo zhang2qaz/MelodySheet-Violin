@@ -17,7 +17,22 @@ from app.music_processing import (
 
 
 def test_ffmpeg_missing_failure(monkeypatch, tmp_path):
+    """When ffmpeg is missing AND librosa fallback is unavailable, the user
+    must see a dependency error mentioning ffmpeg. (When ffmpeg is missing
+    but librosa works, the fallback path silently handles the conversion —
+    that's exercised by the v2 integration test.)
+    """
     monkeypatch.setattr("app.music_processing.shutil.which", lambda _: None)
+
+    import builtins
+    real_import = builtins.__import__
+
+    def block_audio_libs(name, *args, **kwargs):
+        if name in ("librosa", "soundfile"):
+            raise ImportError(f"blocked {name} for test")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", block_audio_libs)
 
     with pytest.raises(DependencyMissingError) as exc:
         convert_audio_to_wav(tmp_path / "input.mp3", tmp_path / "input.wav")

@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
+import sys
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.job_store import (
@@ -160,6 +163,25 @@ def get_file(job_id: str, filename: str) -> FileResponse:
     return FileResponse(path)
 
 
+@app.get("/api/files/{job_id}/tracks/{filename}")
+def get_track_file(job_id: str, filename: str) -> FileResponse:
+    validate_job_id(job_id)
+    if "/" in filename or "\\" in filename or filename.startswith("."):
+        raise HTTPException(status_code=404, detail="未找到文件。")
+    if not (filename.endswith(".musicxml") or filename.endswith(".mid")):
+        raise HTTPException(status_code=404, detail="未找到文件。")
+
+    try:
+        read_job(job_id, settings)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="未找到处理任务。") from None
+
+    path = output_dir(job_id, settings) / "tracks" / filename
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="未找到文件。")
+    return FileResponse(path)
+
+
 @app.post("/api/jobs/{job_id}/regenerate", response_model=RegenerateResponse)
 def regenerate_job(job_id: str, payload: RegenerateRequest) -> RegenerateResponse:
     validate_job_id(job_id)
@@ -178,3 +200,62 @@ def regenerate_job(job_id: str, payload: RegenerateRequest) -> RegenerateRespons
         raise HTTPException(status_code=400, detail=exc.user_message) from exc
 
     return RegenerateResponse(job_id=job_id, status="completed", result=result)
+
+
+# ---------------------------------------------------------------------------
+# Static frontend (used by the Windows installer and any single-process
+# deployment). Set MELODYSHEET_WEB_DIR to the directory holding the static
+# Next.js export. When unset, look for ../web/out (dev tree) and the
+# PyInstaller-bundled "_internal/web" directory.
+# ---------------------------------------------------------------------------
+
+
+def _resolve_web_dir() -> Path | None:
+    env = os.getenv("MELODYSHEET_WEB_DIR")
+    if env:
+        candidate = Path(env).expanduser().resolve()
+        return candidate if candidate.exists() else None
+
+    # PyInstaller frozen layout: sys._MEIPASS/web/
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        bundled = Path(sys._MEIPASS) / "web"
+        if bundled.exists():
+            return bundled
+
+    # Dev tree: apps/web/out (after `npm run build` with NEXT_OUTPUT=export)
+    repo_dev = Path(__file__).resolve().parents[1] / "web" / "out"
+    if repo_dev.exists():
+        return repo_dev
+    return None
+
+
+_web_dir = _resolve_web_dir()
+if _web_dir is not None:
+    # FastAPI's StaticFiles with html=True serves index.html on directory
+    # requests. We also add a catch-all that returns index.html for any
+    # non-existent path so that client-side routing (e.g. /jobs?id=...)
+    # works after a hard refresh.
+    @app.get("/", include_in_schema=False)
+    def _index() -> FileResponse:
+        return FileResponse(_web_dir / "index.html")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def _spa_fallback(full_path: str) -> Response:
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="未找到。")
+        candidate = (_web_dir / full_path).resolve()
+        web_root = _web_dir.resolve()
+        if web_root in candidate.parents or candidate == web_root:
+            if candidate.is_file():
+                return FileResponse(candidate)
+            html_candidate = candidate / "index.html"
+            if html_candidate.is_file():
+                return FileResponse(html_candidate)
+            html_sibling = candidate.with_suffix(".html")
+            if html_sibling.is_file():
+                return FileResponse(html_sibling)
+        # Fall back to root index — client-side router handles the path.
+        return FileResponse(_web_dir / "index.html")
+
+    # Static asset prefix (Next.js puts hashed bundles under /_next/).
+    app.mount("/_next", StaticFiles(directory=str(_web_dir / "_next")), name="next_assets")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -23,6 +23,18 @@ class JobCreateResponse(BaseModel):
     status: JobStatus
 
 
+class DetectedInstrument(BaseModel):
+    instrument: str
+    confidence: float
+    source: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class TrackOutput(BaseModel):
+    musicxml: Optional[str] = None
+    midi: Optional[str] = None
+
+
 class JobResult(BaseModel):
     original_audio_url: Optional[str] = None
     midi_url: Optional[str] = None
@@ -31,10 +43,15 @@ class JobResult(BaseModel):
     notes_url: Optional[str] = None
     detected_key: Optional[str] = None
     estimated_tempo: Optional[int] = None
+    estimated_meter: Optional[str] = None
     note_count: Optional[int] = None
     target_instrument: Optional[str] = None
     filtered_note_count: int = 0
     preprocessing_summary: Optional[str] = None
+    transcription_method: Optional[str] = None
+    detected_instruments: List[DetectedInstrument] = Field(default_factory=list)
+    demucs_stems_used: List[str] = Field(default_factory=list)
+    per_track_outputs: Dict[str, TrackOutput] = Field(default_factory=dict)
     violin_range_warning: bool = False
     violin_range_message: Optional[str] = None
 

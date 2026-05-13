@@ -32,3 +32,15 @@ storage/smoke-test/*
 
 apps/api/.env
 apps/web/.env.local
+installer/vendored/
+dist/
+installer/out/
+build/
+apps/web/out/
+apps/api/.venv-build/
+
+# Runtime / experiment artifacts (regenerable, don't track in git)
+apps/api/storage/realtest/
+scripts/eval/audio/
+scripts/eval/runs/
+scripts/eval/log.jsonl

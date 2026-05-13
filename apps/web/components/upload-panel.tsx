@@ -80,7 +80,7 @@ export function UploadPanel() {
     setError(null);
     try {
       const created = await createJob(file, targetInstrument);
-      router.push(`/jobs/${created.job_id}`);
+      router.push(`/jobs?id=${created.job_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "上传失败，请重试。");
     } finally {
