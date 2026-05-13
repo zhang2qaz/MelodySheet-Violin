@@ -10,6 +10,9 @@ on:
         required: false
         default: "false"
 
+permissions:
+  contents: write  # required for softprops/action-gh-release to create releases
+
 jobs:
   build:
     # macos-14 is Apple Silicon (arm64). To also build for Intel Macs add a
