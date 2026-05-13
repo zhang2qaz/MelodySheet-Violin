@@ -124,8 +124,9 @@ if (Test-Path $IsccPath) {
     $artifact = Join-Path $installerDir "out\MelodySheet-Setup.exe"
     if (Test-Path $artifact) {
         $size = (Get-Item $artifact).Length / 1MB
+        $sizeMb = [math]::Round($size, 1)
         Write-Host ""
-        Write-Host "Built: $artifact ($([math]::Round($size,1)) MB)" -ForegroundColor Green
+        Write-Host "Built: $artifact ($sizeMb MB)" -ForegroundColor Green
     }
 } else {
     Write-Host ""
