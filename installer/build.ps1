@@ -66,15 +66,42 @@ if (-not $SkipFfmpegDownload) {
     Section "Vendoring ffmpeg.exe"
     if (-not (Test-Path $ffmpegExe)) {
         New-Item -ItemType Directory -Force -Path $ffmpegDir | Out-Null
-        $zipUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip"
         $zipPath = Join-Path $env:TEMP "ffmpeg-build.zip"
-        Write-Host "  downloading $zipUrl"
-        Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
+        # Multiple mirrors — BtbN's CDN occasionally 404s on GH Actions runners.
+        # gyan.dev is the canonical Windows ffmpeg builder, with stable URLs.
+        $mirrors = @(
+            "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+            "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip",
+            "https://github.com/GyanD/codexffmpeg/releases/latest/download/ffmpeg-release-essentials.zip"
+        )
+        $downloaded = $false
+        foreach ($zipUrl in $mirrors) {
+            Write-Host "  trying $zipUrl"
+            # curl.exe is shipped with Windows 10+ and follows redirects more
+            # reliably than Invoke-WebRequest. -fL = follow + fail on 4xx.
+            & curl.exe -fL --connect-timeout 30 --max-time 600 --retry 3 --retry-delay 5 `
+                -o $zipPath $zipUrl
+            if ($LASTEXITCODE -eq 0 -and (Test-Path $zipPath) -and (Get-Item $zipPath).Length -gt 1MB) {
+                Write-Host "  downloaded successfully ($((Get-Item $zipPath).Length) bytes)"
+                $downloaded = $true
+                break
+            }
+            Write-Host "  mirror failed (exit=$LASTEXITCODE), trying next"
+            Remove-Item -Force -ErrorAction SilentlyContinue $zipPath
+        }
+        if (-not $downloaded) {
+            throw "All ffmpeg mirrors failed."
+        }
         $extractRoot = Join-Path $env:TEMP "ffmpeg-extract"
         if (Test-Path $extractRoot) { Remove-Item -Recurse -Force $extractRoot }
         Expand-Archive -Path $zipPath -DestinationPath $extractRoot -Force
-        $inner = Get-ChildItem -Path $extractRoot -Directory | Select-Object -First 1
-        Copy-Item (Join-Path $inner.FullName "bin\ffmpeg.exe") $ffmpegExe -Force
+        # Find ffmpeg.exe anywhere in the extracted tree (the layout differs
+        # between BtbN and gyan.dev builds).
+        $ffmpegSource = Get-ChildItem -Path $extractRoot -Recurse -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $ffmpegSource) {
+            throw "ffmpeg.exe not found in extracted archive."
+        }
+        Copy-Item $ffmpegSource.FullName $ffmpegExe -Force
         Remove-Item $zipPath -Force
         Remove-Item -Recurse -Force $extractRoot
         Write-Host "  vendored at $ffmpegExe"
