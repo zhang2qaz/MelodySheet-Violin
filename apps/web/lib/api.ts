@@ -59,6 +59,18 @@ export async function createJob(
   return parseJsonOrThrow<CreateJobResponse>(response);
 }
 
+export async function createJobFromUrl(
+  url: string,
+  targetInstrument: TargetInstrument = "violin",
+): Promise<CreateJobResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/api/jobs/from-url`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, target_instrument: targetInstrument }),
+  });
+  return parseJsonOrThrow<CreateJobResponse>(response);
+}
+
 export async function getJob(jobId: string): Promise<JobResponse> {
   const response = await apiFetch(`${API_BASE_URL}/api/jobs/${jobId}`, {
     cache: "no-store",
@@ -76,13 +88,22 @@ export async function fetchNumberedNotation(url: string): Promise<NumberedNotati
   return parseJsonOrThrow<NumberedNotation>(response);
 }
 
-export async function regenerateJob(jobId: string, notes: EditableNote[]): Promise<JobResponse> {
+export async function regenerateJob(
+  jobId: string,
+  notes: EditableNote[],
+  overrides?: { tempo_bpm?: number | null; detected_key?: string | null; meter?: string | null },
+): Promise<JobResponse> {
   const response = await apiFetch(`${API_BASE_URL}/api/jobs/${jobId}/regenerate`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ notes }),
+    body: JSON.stringify({
+      notes,
+      ...(overrides?.tempo_bpm != null ? { tempo_bpm: overrides.tempo_bpm } : {}),
+      ...(overrides?.detected_key ? { detected_key: overrides.detected_key } : {}),
+      ...(overrides?.meter ? { meter: overrides.meter } : {}),
+    }),
   });
   const payload = await parseJsonOrThrow<{
     job_id: string;

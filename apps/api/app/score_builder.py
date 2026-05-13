@@ -197,6 +197,23 @@ def write_score_outputs(score: Any, output_dir: Path, *, prefix: str = "melody")
     output_dir.mkdir(parents=True, exist_ok=True)
     musicxml_path = output_dir / f"{prefix}.musicxml"
     midi_path = output_dir / f"{prefix}.mid"
+    lily_path = output_dir / f"{prefix}.ly"
+    abc_path = output_dir / f"{prefix}.abc"
     score.write("musicxml", fp=str(musicxml_path))
     score.write("midi", fp=str(midi_path))
-    return {"musicxml": musicxml_path, "midi": midi_path}
+    # LilyPond and ABC formats: best-effort, music21 supports both natively.
+    # These are non-fatal extras for users who use those engravers.
+    try:
+        score.write("lily", fp=str(lily_path))
+    except Exception:
+        lily_path = None  # type: ignore[assignment]
+    try:
+        score.write("abc", fp=str(abc_path))
+    except Exception:
+        abc_path = None  # type: ignore[assignment]
+    return {
+        "musicxml": musicxml_path,
+        "midi": midi_path,
+        "lily": lily_path,
+        "abc": abc_path,
+    }

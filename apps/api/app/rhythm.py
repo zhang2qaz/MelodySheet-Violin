@@ -118,25 +118,43 @@ def _nearest_duration_label(duration_quarters: float) -> str:
 
 
 def estimate_meter(beats: list[float], audio: Any, sample_rate: int) -> str:
-    """Light-touch meter detection. Defaults to 4/4 — anything more reliable would need
-    a downbeat tracker (e.g. madmom DBN), which we keep optional.
+    """Meter detection over the candidate set {2/4, 3/4, 4/4, 6/8}.
+
+    Uses periodicity of accented beats (every 2nd / 3rd / 4th beat) measured
+    against the onset envelope. Falls back to 4/4 on insufficient data.
     """
     try:
         import librosa
         import numpy as np
 
-        if not beats or len(beats) < 8:
+        if not beats or len(beats) < 6:
             return "4/4"
         onset_env = librosa.onset.onset_strength(y=audio, sr=sample_rate, aggregate=np.median)
         beat_frames = librosa.time_to_frames(beats, sr=sample_rate)
-        beat_strengths = onset_env[beat_frames[beat_frames < len(onset_env)]]
-        if len(beat_strengths) < 8:
+        beat_frames = beat_frames[beat_frames < len(onset_env)]
+        if len(beat_frames) < 6:
             return "4/4"
-        # Compare mean strength of every-3rd vs every-4th beat to decide between 3/4 and 4/4.
-        triple = float(np.mean(beat_strengths[::3]))
-        quadruple = float(np.mean(beat_strengths[::4]))
-        if triple > quadruple * 1.08:
-            return "3/4"
-        return "4/4"
+        strengths = onset_env[beat_frames]
+
+        # Score each candidate by the mean accent strength at its downbeat positions.
+        # The meter whose downbeat strikes are loudest wins.
+        candidates = {
+            "2/4": float(np.mean(strengths[::2])),
+            "3/4": float(np.mean(strengths[::3])),
+            "4/4": float(np.mean(strengths[::4])),
+            "6/8": float(np.mean(strengths[::6])) if len(strengths) >= 12 else 0.0,
+        }
+        # Slight bias toward 4/4 — most popular music is in 4. Without this
+        # almost-equal candidates flip-flop run-to-run.
+        candidates["4/4"] *= 1.05
+
+        best = max(candidates, key=candidates.get)
+        # Sanity: require the best to beat the runner-up by at least 8% or
+        # fall back to 4/4 to avoid spurious 3/4 reads on near-uniform pieces.
+        sorted_scores = sorted(candidates.values(), reverse=True)
+        if sorted_scores[0] < sorted_scores[1] * 1.08:
+            return "4/4"
+        return best
+
     except Exception:
         return "4/4"

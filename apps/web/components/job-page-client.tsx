@@ -7,6 +7,7 @@ import { apiUrl, fetchNotes, fetchNumberedNotation, getJob, regenerateJob } from
 import type { EditableNote, JobResponse, NumberedNotation } from "@/lib/types";
 import { DownloadButtons } from "@/components/download-buttons";
 import { MusicXmlViewer } from "@/components/musicxml-viewer";
+import { SpectrogramView } from "@/components/spectrogram-view";
 import { NoteEditor } from "@/components/note-editor";
 import { NumberedNotationView } from "@/components/numbered-notation-view";
 import { PlaybackControls } from "@/components/playback-controls";
@@ -81,11 +82,15 @@ export function JobPageClient({ jobId }: { jobId: string }) {
     };
   }, [jobId, loadResultFiles]);
 
-  async function handleRegenerate() {
+  async function handleRegenerate(overrides?: {
+    tempo_bpm?: number | null;
+    detected_key?: string | null;
+    meter?: string | null;
+  }) {
     setRegenerating(true);
     setLoadingError(null);
     try {
-      const updated = await regenerateJob(jobId, notes);
+      const updated = await regenerateJob(jobId, notes, overrides);
       setJob(updated);
       await loadResultFiles(updated);
     } catch (err) {
@@ -150,12 +155,15 @@ export function JobPageClient({ jobId }: { jobId: string }) {
           </section>
 
           <MusicXmlViewer musicXmlUrl={result.musicxml_url} />
+          <SpectrogramView spectrogramUrl={result.spectrogram_url} />
           <NumberedNotationView notation={numberedNotation} />
           <PlaybackControls notes={notes} />
           <DownloadButtons result={result} />
           <NoteEditor
             notes={notes}
             tempo={tempo}
+            detectedKey={result?.detected_key ?? null}
+            meter={result?.estimated_meter ?? null}
             regenerating={regenerating}
             onChange={setNotes}
             onRegenerate={handleRegenerate}

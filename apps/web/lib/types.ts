@@ -27,6 +27,9 @@ export type JobResult = {
   musicxml_url: string | null;
   numbered_json_url: string | null;
   notes_url: string | null;
+  spectrogram_url: string | null;
+  lily_url: string | null;
+  abc_url: string | null;
   detected_key: string | null;
   estimated_tempo: number | null;
   estimated_meter: string | null;

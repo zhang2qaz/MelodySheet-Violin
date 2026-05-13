@@ -47,6 +47,9 @@ def result_urls(job_id: str, extension: str) -> dict[str, Any]:
         "musicxml_url": f"/api/files/{job_id}/melody.musicxml",
         "numbered_json_url": f"/api/files/{job_id}/numbered.json",
         "notes_url": f"/api/files/{job_id}/notes.json",
+        "spectrogram_url": f"/api/files/{job_id}/spectrogram.png",
+        "lily_url": f"/api/files/{job_id}/melody.ly",
+        "abc_url": f"/api/files/{job_id}/melody.abc",
     }
 
 

@@ -76,6 +76,8 @@ for pkg in (
     "decorator",
     "llvmlite",
     "onnxruntime",
+    "matplotlib",      # spectrogram rendering
+    "yt_dlp",          # URL import (B站/YouTube/SoundCloud)
 ):
     try:
         sub_datas, sub_binaries, sub_hidden = collect_all(pkg)
@@ -121,7 +123,7 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         "tkinter",
-        "matplotlib",
+        # matplotlib intentionally NOT excluded — spectrogram rendering needs it
         "pytest",
         "PyQt5",
         "PyQt6",

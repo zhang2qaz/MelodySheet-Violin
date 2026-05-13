@@ -41,6 +41,9 @@ class JobResult(BaseModel):
     musicxml_url: Optional[str] = None
     numbered_json_url: Optional[str] = None
     notes_url: Optional[str] = None
+    spectrogram_url: Optional[str] = None
+    lily_url: Optional[str] = None
+    abc_url: Optional[str] = None
     detected_key: Optional[str] = None
     estimated_tempo: Optional[int] = None
     estimated_meter: Optional[str] = None
@@ -97,6 +100,14 @@ class EditableNote(BaseModel):
 
 class RegenerateRequest(BaseModel):
     notes: List[EditableNote] = Field(min_length=1)
+    tempo_bpm: Optional[int] = Field(default=None, ge=30, le=300)
+    detected_key: Optional[str] = Field(default=None, max_length=24)
+    meter: Optional[str] = Field(default=None, max_length=8)
+
+
+class UrlImportRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=1024)
+    target_instrument: str = Field(default="violin")
 
 
 class RegenerateResponse(BaseModel):

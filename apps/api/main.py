@@ -23,7 +23,13 @@ from app.job_store import (
     read_job,
     upload_dir,
 )
-from app.models import JobCreateResponse, JobStatusResponse, RegenerateRequest, RegenerateResponse
+from app.models import (
+    JobCreateResponse,
+    JobStatusResponse,
+    RegenerateRequest,
+    RegenerateResponse,
+    UrlImportRequest,
+)
 from app.music_processing import PipelineError, TARGET_INSTRUMENT_PROFILES, process_job, regenerate_from_notes
 
 
@@ -126,6 +132,113 @@ async def create_job(
     return JobCreateResponse(job_id=job_id, status="uploaded")
 
 
+_ALLOWED_URL_HOSTS = {
+    "youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be",
+    "bilibili.com", "www.bilibili.com", "m.bilibili.com",
+    "b23.tv",
+    "soundcloud.com", "m.soundcloud.com",
+    "vimeo.com",
+}
+
+
+def _validate_url(url: str) -> str:
+    from urllib.parse import urlparse
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="URL 必须以 http:// 或 https:// 开头。")
+    host = (parsed.netloc or "").lower().split(":")[0]
+    if host not in _ALLOWED_URL_HOSTS:
+        allowed = ", ".join(sorted(_ALLOWED_URL_HOSTS))
+        raise HTTPException(
+            status_code=400,
+            detail=f"暂不支持该网站。支持：{allowed}",
+        )
+    return url.strip()
+
+
+def _download_with_ytdlp(url: str, dest_path: Path) -> None:
+    """Download audio-only from a video URL via yt-dlp. Writes m4a/mp3/webm
+    to `dest_path` (we keep the extension yt-dlp picked). Throws on failure.
+    """
+    if shutil.which("yt-dlp") is None and shutil.which("youtube-dl") is None:
+        raise HTTPException(
+            status_code=500,
+            detail="服务器未安装 yt-dlp。请直接上传本地音频文件。",
+        )
+    binary = "yt-dlp" if shutil.which("yt-dlp") else "youtube-dl"
+    import subprocess
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    template = str(dest_path.parent / "original.%(ext)s")
+    cmd = [
+        binary,
+        "-x",                       # extract audio only
+        "--audio-format", "m4a",   # prefer m4a (no ffmpeg required for some sources)
+        "--audio-quality", "0",
+        "--no-playlist",
+        "--max-filesize", "200M",
+        "--no-warnings",
+        "-o", template,
+        url,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    if result.returncode != 0:
+        snippet = (result.stderr or result.stdout)[-500:]
+        raise HTTPException(
+            status_code=400,
+            detail=f"音频下载失败。{snippet.strip()}",
+        )
+    # Find the file yt-dlp produced
+    candidates = sorted(dest_path.parent.glob("original.*"))
+    if not candidates:
+        raise HTTPException(status_code=500, detail="yt-dlp 没有输出可用音频。")
+
+
+@app.post("/api/jobs/from-url", response_model=JobCreateResponse)
+async def create_job_from_url(
+    background_tasks: BackgroundTasks,
+    payload: UrlImportRequest,
+) -> JobCreateResponse:
+    """Pull audio from a streaming URL (YouTube / Bilibili / SoundCloud / Vimeo)
+    via yt-dlp, then route through the same transcription pipeline.
+    """
+    url = _validate_url(payload.url)
+    normalized_target = validate_target_instrument(payload.target_instrument)
+
+    job_id = uuid.uuid4().hex
+    ensure_job_dirs(job_id, settings)
+    dest_dir = upload_dir(job_id, settings)
+
+    try:
+        _download_with_ytdlp(url, dest_dir / "original.placeholder")
+    except HTTPException:
+        shutil.rmtree(dest_dir, ignore_errors=True)
+        shutil.rmtree(output_dir(job_id, settings), ignore_errors=True)
+        job_file(job_id, settings).unlink(missing_ok=True)
+        raise
+
+    produced = sorted(dest_dir.glob("original.*"))
+    if not produced:
+        shutil.rmtree(dest_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail="yt-dlp 完成但找不到下载产物。")
+    audio_path = produced[0]
+    extension = audio_path.suffix.lstrip(".").lower() or "m4a"
+    size_bytes = audio_path.stat().st_size
+
+    create_job_metadata(
+        job_id,
+        original_filename=f"original.{extension}",
+        extension=extension,
+        size_bytes=size_bytes,
+        target_instrument=normalized_target,
+        config=settings,
+    )
+
+    if settings.auto_process:
+        background_tasks.add_task(process_job, job_id, settings)
+
+    return JobCreateResponse(job_id=job_id, status="uploaded")
+
+
 @app.get("/api/jobs/{job_id}", response_model=JobStatusResponse)
 def get_job(job_id: str) -> JobStatusResponse:
     validate_job_id(job_id)
@@ -149,7 +262,10 @@ def get_file(job_id: str, filename: str) -> FileResponse:
 
     extension = metadata.get("input", {}).get("extension")
     allowed_upload = f"original.{extension}"
-    allowed_outputs = {"melody.mid", "melody.musicxml", "numbered.json", "notes.json"}
+    allowed_outputs = {
+        "melody.mid", "melody.musicxml", "numbered.json", "notes.json",
+        "spectrogram.png", "melody.ly", "melody.abc",
+    }
 
     if filename == allowed_upload:
         path = upload_dir(job_id, settings) / filename
@@ -195,6 +311,9 @@ def regenerate_job(job_id: str, payload: RegenerateRequest) -> RegenerateRespons
             job_id,
             [note.model_dump() for note in payload.notes],
             settings,
+            tempo_override=payload.tempo_bpm,
+            key_override=payload.detected_key,
+            meter_override=payload.meter,
         )
     except PipelineError as exc:
         raise HTTPException(status_code=400, detail=exc.user_message) from exc

@@ -758,13 +758,18 @@ def regenerate_from_notes(
     job_id: str,
     notes: list[dict[str, Any]],
     config: Settings = settings,
+    *,
+    tempo_override: int | None = None,
+    key_override: str | None = None,
+    meter_override: str | None = None,
 ) -> dict[str, Any]:
     metadata = update_job(job_id, config, status="postprocessing", progress=85, error=None)
     result = metadata.get("result") or {}
     input_info = metadata.get("input") or {}
     extension = input_info.get("extension", "wav")
-    tempo_bpm = int(result.get("estimated_tempo") or 90)
-    detected_key = normalize_key_name(result.get("detected_key") or "C major")
+    tempo_bpm = int(tempo_override or result.get("estimated_tempo") or 90)
+    detected_key = normalize_key_name(key_override or result.get("detected_key") or "C major")
+    meter = meter_override or result.get("estimated_meter") or "4/4"
     target_instrument = input_info.get("target_instrument") or result.get("target_instrument") or "violin"
     outputs_path = output_dir(job_id, config)
 
@@ -780,6 +785,7 @@ def regenerate_from_notes(
         midi_path=outputs_path / "melody.mid",
         tempo_bpm=tempo_bpm,
         detected_key=detected_key,
+        meter=meter,
         target_instrument=target_instrument,
     )
     write_json(outputs_path / "notes.json", {"notes": normalized_notes})
@@ -789,6 +795,7 @@ def regenerate_from_notes(
             normalized_notes,
             detected_key=detected_key,
             tempo_bpm=tempo_bpm,
+            meter=meter,
         ),
     )
 
@@ -796,6 +803,7 @@ def regenerate_from_notes(
         **result_urls(job_id, extension),
         "detected_key": normalize_key_name(detected_key).split()[0],
         "estimated_tempo": tempo_bpm,
+        "estimated_meter": meter,
         "note_count": len(normalized_notes),
         "target_instrument": target_instrument,
         "filtered_note_count": filtered_note_count,
@@ -969,6 +977,13 @@ def process_job_v2(
         outputs_path / "numbered.json",
         generate_numbered_notation(quantized, detected_key=detected_key, tempo_bpm=int(round(tempo_bpm)), meter=meter),
     )
+
+    # Render spectrogram PNG for the result page (visual feedback to users).
+    try:
+        from app.spectrogram import render_spectrogram_png
+        render_spectrogram_png(audio, sample_rate, outputs_path / "spectrogram.png")
+    except Exception:
+        pass  # spectrogram is decorative; never block the job on it
 
     if not (outputs_path / "melody.musicxml").exists() or not (outputs_path / "melody.mid").exists():
         raise PipelineError("后处理失败，缺少多轨乐谱输出文件。")
