@@ -126,7 +126,10 @@ if (Test-Path $IsccPath) {
         $size = (Get-Item $artifact).Length / 1MB
         $sizeMb = [math]::Round($size, 1)
         Write-Host ""
-        Write-Host "Built: $artifact ($sizeMb MB)" -ForegroundColor Green
+        # Use -f format operator: `MB` inside a double-quoted string trips
+        # PowerShell's numeric-suffix parser (1MB = 1048576) even when it's
+        # just literal text.
+        Write-Host ("Built: {0} ({1} MB)" -f $artifact, $sizeMb) -ForegroundColor Green
     }
 } else {
     Write-Host ""
