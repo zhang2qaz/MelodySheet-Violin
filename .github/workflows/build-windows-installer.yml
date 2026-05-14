@@ -43,6 +43,24 @@ jobs:
           if (-not (Test-Path $iscc)) { throw "ISCC.exe missing after install" }
           echo "ISCC_PATH=$iscc" >> $env:GITHUB_ENV
 
+      # The .ps1 must stay pure ASCII. Windows PowerShell 5.1 reads files
+      # under the system code page when there's no BOM, and any multi-byte
+      # UTF-8 sequence (em-dash, Chinese, etc) gets mangled, which corrupts
+      # string-literal boundaries and triggers cryptic parser errors deep
+      # in the file (e.g. "Unexpected token 'MB'" 80+ lines past the actual
+      # bad char). This has bitten us THREE times. Fail fast here so we
+      # know immediately rather than after the runner spends 30s booting.
+      - name: Guard build.ps1 is pure ASCII
+        shell: bash
+        run: |
+          set -e
+          if LC_ALL=C grep -qP '[^\x00-\x7f]' installer/build.ps1; then
+            echo "::error file=installer/build.ps1::build.ps1 contains non-ASCII chars. Windows PowerShell 5.1 will mangle the file and parser will fail downstream."
+            LC_ALL=C grep -nP '[^\x00-\x7f]' installer/build.ps1
+            exit 1
+          fi
+          echo "build.ps1 is pure ASCII -- OK"
+
       - name: Run build pipeline
         shell: pwsh
         run: |

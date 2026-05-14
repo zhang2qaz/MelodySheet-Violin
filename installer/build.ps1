@@ -67,7 +67,7 @@ if (-not $SkipFfmpegDownload) {
     if (-not (Test-Path $ffmpegExe)) {
         New-Item -ItemType Directory -Force -Path $ffmpegDir | Out-Null
         $zipPath = Join-Path $env:TEMP "ffmpeg-build.zip"
-        # Multiple mirrors — BtbN's CDN occasionally 404s on GH Actions runners.
+        # Multiple mirrors -- BtbN's CDN occasionally 404s on GH Actions runners.
         # gyan.dev is the canonical Windows ffmpeg builder, with stable URLs.
         $mirrors = @(
             "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
@@ -130,19 +130,19 @@ if (-not $SkipWebBuild) {
         # protection, but we still want the env var to behave correctly.
         [System.Environment]::SetEnvironmentVariable("NEXT_OUTPUT", "export", "Process")
         [System.Environment]::SetEnvironmentVariable("NEXT_PUBLIC_API_BASE_URL", "", "Process")
-        # Sanity check — surface the env state to build logs so we don't ever
+        # Sanity check -- surface the env state to build logs so we don't ever
         # silently regress this. If the var is missing here the installer's
         # bundled JS will hardcode http://localhost:8000.
         $envVal = [System.Environment]::GetEnvironmentVariable("NEXT_PUBLIC_API_BASE_URL", "Process")
         if ($null -eq $envVal) {
-            Write-Host "[build] WARNING: NEXT_PUBLIC_API_BASE_URL is null after SetEnvironmentVariable — same-origin fallback in api.ts will kick in." -ForegroundColor Yellow
+            Write-Host "[build] WARNING: NEXT_PUBLIC_API_BASE_URL is null after SetEnvironmentVariable -- same-origin fallback in api.ts will kick in." -ForegroundColor Yellow
         } else {
             Write-Host "[build] NEXT_PUBLIC_API_BASE_URL='$envVal' (len=$($envVal.Length))"
         }
         npm run build
 
         # =====================================================================
-        # POST-BUILD GUARD — the killer regression check.
+        # POST-BUILD GUARD -- the killer regression check.
         #
         # History: we have shipped TWO bad installers in a row that hardcoded
         # http://localhost:8000 into the bundled JS, even though api.ts looked
@@ -152,12 +152,12 @@ if (-not $SkipWebBuild) {
         #
         # Even with all the source-level defenses, ONLY a post-build artifact
         # check can prove the shipped JS is correct. If you ever see this guard
-        # fire in CI, do NOT ship the installer — something in the build chain
+        # fire in CI, do NOT ship the installer -- something in the build chain
         # changed and the fallback URL is back in the bundle.
         # =====================================================================
         $outDir = Join-Path $webDir "out"
         if (-not (Test-Path $outDir)) {
-            # NOTE: do not use backticks in PowerShell strings — they are the
+            # NOTE: do not use backticks in PowerShell strings -- they are the
             # escape character, NOT a quote marker. Past version of this file
             # had backticks around 'next build' and broke the parser entirely.
             throw "[build] Static export missing at $outDir -- next build did not produce out/."
@@ -168,7 +168,7 @@ if (-not $SkipWebBuild) {
         if ($null -ne $offender) {
             throw "[build] FATAL: 'localhost:8000' found in shipped bundle at $($offender.Path):$($offender.LineNumber). The installer would point at the wrong API. Refusing to package."
         }
-        Write-Host "[build] Post-build URL guard passed — no localhost:8000 in shipped JS." -ForegroundColor Green
+        Write-Host "[build] Post-build URL guard passed -- no localhost:8000 in shipped JS." -ForegroundColor Green
     } finally {
         Pop-Location
     }
