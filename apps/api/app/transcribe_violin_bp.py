@@ -176,13 +176,28 @@ def transcribe_violin_via_basic_pitch(
         if is_dominant_at_onset(idx):
             keepers_raw.append(raw_sorted[idx])
 
-    # Truncate overlapping monophonic notes. If two surviving notes overlap
-    # in time, shorten the earlier one so it ends when the later one begins.
+    # Truncate overlapping notes -- but only when the later note clearly
+    # supersedes the earlier one (significantly higher velocity). Two
+    # similar-velocity notes that overlap are a DOUBLE STOP (the violin
+    # convention of bowing two strings at once); both must survive.
+    #
+    # Without this exception the monophonic projection collapses every
+    # double-stop to a single voice and the score loses half its harmony.
+    DOUBLE_STOP_VEL_TOLERANCE = 0.20
     keepers_raw.sort(key=lambda x: x[0])
     truncated: list[list[float | int]] = []
     for s, e, midi, vel in keepers_raw:
         if truncated and float(truncated[-1][1]) > s + 0.005:
-            truncated[-1][1] = s
+            prev_vel = float(truncated[-1][3])
+            if vel >= prev_vel - DOUBLE_STOP_VEL_TOLERANCE:
+                # Comparable velocity -> treat as double-stop, keep both at
+                # their natural boundaries. Do NOT truncate previous note.
+                pass
+            else:
+                # New note is meaningfully quieter -- it's likely an overtone
+                # or accompaniment under the dominant voice. Truncate prev
+                # at the new onset to preserve the monophonic line.
+                truncated[-1][1] = s
         truncated.append([float(s), float(e), int(midi), float(vel)])
 
     # =====================================================================

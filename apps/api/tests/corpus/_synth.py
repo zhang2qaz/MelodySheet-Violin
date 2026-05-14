@@ -315,6 +315,88 @@ def main() -> None:
                synth_clip(n11, total_seconds=t + 0.5, vibrato_cents=15.0), n11)
 
     # =====================================================================
+    # CURRICULUM LEVEL 2: DOUBLE STOPS
+    #
+    # On a violin, a double stop is two strings bowed simultaneously,
+    # producing two notes at the same instant. This is the bread-and-
+    # butter of solo violin literature (Bach Chaconne, every cadenza ever).
+    #
+    # The synthesizer already supports overlapping notes via simple
+    # additive synthesis -- two GroundTruthNote entries with the same
+    # start_time get rendered on top of each other. Ground truth lists
+    # both notes, so evaluation requires BOTH be detected for full credit.
+    #
+    # Tests we want to cover:
+    #   13_perfect_fifth     -- two open strings, simplest case
+    #   14_parallel_thirds   -- chains of thirds (common Bach pattern)
+    #   15_sixths_octaves    -- wide intervals
+    #   16_mixed_double_solo -- alternates single notes and double stops
+    # =====================================================================
+
+    # 13: held perfect fifths on open strings (G3+D4, D4+A4, A4+E5)
+    n13 = []
+    pairs = [(55, 62), (62, 69), (69, 76)]  # G3-D4, D4-A4, A4-E5
+    t = 0.5
+    for low, high in pairs:
+        n13.append(GroundTruthNote(midi=low, start=t, end=t + 0.9))
+        n13.append(GroundTruthNote(midi=high, start=t, end=t + 0.9))
+        t += 1.0
+    write_clip(out_dir, "13_perfect_fifths_doublestop",
+               synth_clip(n13, total_seconds=t + 0.5, note_amplitude=0.45), n13)
+
+    # 14: parallel thirds ascending (Bach Adagio style)
+    # voicing: lower voice on G string, upper voice a third higher
+    n14 = []
+    lowers = [55, 57, 59, 60, 62, 64, 65, 67]   # G3 A3 B3 C4 D4 E4 F4 G4
+    uppers = [m + 4 for m in lowers]            # major thirds above
+    t = 0.5
+    for low, high in zip(lowers, uppers):
+        n14.append(GroundTruthNote(midi=low, start=t, end=t + 0.4))
+        n14.append(GroundTruthNote(midi=high, start=t, end=t + 0.4))
+        t += 0.45
+    write_clip(out_dir, "14_parallel_thirds",
+               synth_clip(n14, total_seconds=t + 0.5, note_amplitude=0.45), n14)
+
+    # 15: ascending sixths and octaves
+    n15 = []
+    intervals = [
+        (60, 69),  # C4-A4 (major sixth)
+        (62, 71),  # D4-B4 (major sixth)
+        (64, 72),  # E4-C5 (minor sixth)
+        (60, 72),  # C4-C5 (octave)
+        (62, 74),  # D4-D5 (octave)
+    ]
+    t = 0.5
+    for low, high in intervals:
+        n15.append(GroundTruthNote(midi=low, start=t, end=t + 0.55))
+        n15.append(GroundTruthNote(midi=high, start=t, end=t + 0.55))
+        t += 0.6
+    write_clip(out_dir, "15_sixths_octaves",
+               synth_clip(n15, total_seconds=t + 0.5, note_amplitude=0.45), n15)
+
+    # 16: mixed -- single notes, then a double stop, then more single notes.
+    # The hardest test: pipeline must handle both modes within one clip.
+    n16 = []
+    schedule = [
+        ("single", 69),                    # A4
+        ("single", 72),                    # C5
+        ("double", (67, 72)),              # G4 + C5
+        ("single", 74),                    # D5
+        ("double", (65, 69)),              # F4 + A4
+        ("single", 64),                    # E4
+    ]
+    t = 0.5
+    for kind, payload in schedule:
+        if kind == "single":
+            n16.append(GroundTruthNote(midi=payload, start=t, end=t + 0.55))
+        else:
+            for m in payload:
+                n16.append(GroundTruthNote(midi=m, start=t, end=t + 0.55))
+        t += 0.6
+    write_clip(out_dir, "16_mixed_double_solo",
+               synth_clip(n16, total_seconds=t + 0.5, note_amplitude=0.45), n16)
+
+    # =====================================================================
     # LEVEL 12: trill / mordent (rapid 2-note alternation).
     # Tests whether the transcriber handles ornaments without producing
     # 30 separate notes when it's really one ornament.
