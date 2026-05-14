@@ -77,7 +77,7 @@ for pkg in (
     "llvmlite",
     "onnxruntime",
     "matplotlib",      # spectrogram rendering
-    "yt_dlp",          # URL import (B站/YouTube/SoundCloud)
+    # yt_dlp removed: URL-import feature deleted (unreliable anti-bot evasion).
 ):
     try:
         sub_datas, sub_binaries, sub_hidden = collect_all(pkg)

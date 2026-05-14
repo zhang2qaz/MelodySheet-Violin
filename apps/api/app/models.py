@@ -115,11 +115,6 @@ class RegenerateRequest(BaseModel):
     meter: Optional[str] = Field(default=None, max_length=8)
 
 
-class UrlImportRequest(BaseModel):
-    url: str = Field(min_length=8, max_length=1024)
-    target_instrument: str = Field(default="violin")
-
-
 class RegenerateResponse(BaseModel):
     job_id: str
     status: JobStatus

@@ -122,17 +122,8 @@ export async function createJob(
   return parseJsonOrThrow<CreateJobResponse>(response);
 }
 
-export async function createJobFromUrl(
-  url: string,
-  targetInstrument: TargetInstrument = "violin",
-): Promise<CreateJobResponse> {
-  const response = await apiFetch(`${apiBaseUrl()}/api/jobs/from-url`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, target_instrument: targetInstrument }),
-  });
-  return parseJsonOrThrow<CreateJobResponse>(response);
-}
+// createJobFromUrl() was removed when the URL-import feature was deleted.
+// The corresponding backend endpoint /api/jobs/from-url no longer exists.
 
 export async function getJob(jobId: string): Promise<JobResponse> {
   const response = await apiFetch(`${apiBaseUrl()}/api/jobs/${jobId}`, {

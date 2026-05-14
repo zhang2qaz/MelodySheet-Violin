@@ -2,8 +2,8 @@
 
 import { ChangeEvent, DragEvent, FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, FileAudio, Link as LinkIcon, Music2, ShieldCheck, UploadCloud } from "lucide-react";
-import { createJob, createJobFromUrl } from "@/lib/api";
+import { AlertCircle, FileAudio, Music2, ShieldCheck, UploadCloud } from "lucide-react";
+import { createJob } from "@/lib/api";
 import type { TargetInstrument } from "@/lib/types";
 
 const ACCEPTED_EXTENSIONS = ["mp3", "wav", "m4a"];
@@ -29,8 +29,6 @@ export function UploadPanel() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [targetInstrument, setTargetInstrument] = useState<TargetInstrument>("violin");
-  const [url, setUrl] = useState("");
-  const [urlSubmitting, setUrlSubmitting] = useState(false);
 
   function validateFile(nextFile: File | null) {
     setError(null);
@@ -87,25 +85,6 @@ export function UploadPanel() {
       setError(err instanceof Error ? err.message : "上传失败，请重试。");
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  async function handleSubmitUrl(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmed = url.trim();
-    if (!trimmed) {
-      setError("请粘贴一段视频链接。");
-      return;
-    }
-    setUrlSubmitting(true);
-    setError(null);
-    try {
-      const created = await createJobFromUrl(trimmed, targetInstrument);
-      router.push(`/jobs?id=${created.job_id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "导入失败，请重试。");
-    } finally {
-      setUrlSubmitting(false);
     }
   }
 
@@ -190,33 +169,6 @@ export function UploadPanel() {
               <span>{error}</span>
             </div>
           ) : null}
-        </div>
-
-        <div className="mt-6 border border-ink/15 bg-white/55 p-5">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-staff">
-            <LinkIcon className="h-4 w-4" aria-hidden="true" />
-            从链接导入（B站 / YouTube / SoundCloud）
-          </div>
-          <p className="mb-3 text-sm leading-6 text-ink/65">
-            粘贴一段视频或音频链接,我们会自动抓取音频并扒谱。请确保你有权使用该音频。
-          </p>
-          <form onSubmit={handleSubmitUrl} className="flex flex-col gap-3 sm:flex-row">
-            <input
-              type="url"
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder="https://www.bilibili.com/video/... 或 https://youtu.be/..."
-              className="h-11 flex-1 border border-ink/15 bg-white px-3 text-ink outline-none transition focus:border-staff"
-            />
-            <button
-              type="submit"
-              disabled={urlSubmitting || !url.trim()}
-              className="inline-flex min-h-11 items-center justify-center gap-2 bg-ink px-5 py-2 text-sm font-semibold text-white transition hover:bg-ink/85 disabled:cursor-not-allowed disabled:bg-ink/25"
-            >
-              <LinkIcon className="h-4 w-4" aria-hidden="true" />
-              {urlSubmitting ? "正在下载音频..." : "导入并转写"}
-            </button>
-          </form>
         </div>
 
         <div className="grid gap-3 text-sm text-ink/68 sm:grid-cols-3">
