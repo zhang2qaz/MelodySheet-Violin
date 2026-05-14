@@ -251,6 +251,89 @@ def main() -> None:
     write_clip(out_dir, "08_mixed_durations",
                synth_clip(n8, total_seconds=t + 0.5), n8)
 
+    # =====================================================================
+    # LEVEL 9: fast 16th-note ascending+descending runs.
+    # This is the stress test pYIN couldn't pass -- BP should handle it.
+    # 16th note at 120 BPM = 0.125 s per note.
+    # =====================================================================
+    n9 = []
+    sixteenth = 0.125
+    # Two octaves of A minor scale, up and down
+    a_minor = [69, 71, 72, 74, 76, 77, 79, 81]
+    pattern = a_minor + list(reversed(a_minor)) + a_minor + list(reversed(a_minor))
+    t = 0.5
+    for midi in pattern:
+        n9.append(GroundTruthNote(midi=midi, start=t, end=t + sixteenth - 0.01))
+        t += sixteenth
+    write_clip(out_dir, "09_fast_16ths",
+               synth_clip(n9, total_seconds=t + 0.5), n9)
+
+    # =====================================================================
+    # LEVEL 10: chromatic scale -- exercises every accidental in one phrase.
+    # Catches octave / enharmonic spelling bugs.
+    # =====================================================================
+    n10 = []
+    t = 0.5
+    for midi in range(60, 73):  # C4 chromatic up to C5
+        n10.append(GroundTruthNote(midi=midi, start=t, end=t + 0.35))
+        t += 0.4
+    for midi in range(72, 59, -1):  # back down
+        n10.append(GroundTruthNote(midi=midi, start=t, end=t + 0.35))
+        t += 0.4
+    write_clip(out_dir, "10_chromatic_scale",
+               synth_clip(n10, total_seconds=t + 0.5), n10)
+
+    # =====================================================================
+    # LEVEL 11: Bach BWV 1001 Adagio opening -- real classical content.
+    # First 12 notes of the iconic arpeggiated G minor opening.
+    # Pitches transcribed from the Bärenreiter edition (public domain).
+    # =====================================================================
+    # G3 D4 G4 Bb4 D5 G5 -- the first arpeggio of BWV 1001 mvt 1
+    # then the descending and chromatic figures that follow
+    n11 = []
+    bach_g_minor_opening = [
+        # measure 1 arpeggio + dotted patterns
+        (55, 1.0),  # G3 dotted-quarter feel
+        (62, 0.25), # D4
+        (67, 0.25), # G4
+        (70, 0.25), # Bb4
+        (74, 0.25), # D5
+        (79, 1.0),  # G5
+        # measure 2 turning figure
+        (77, 0.25),  # F5
+        (76, 0.25),  # E5  (= Eb5 in G minor — but spelled E here for test)
+        (74, 0.5),   # D5
+        (72, 0.25),  # C5
+        (70, 0.25),  # Bb4
+        (67, 0.5),   # G4
+    ]
+    t = 0.5
+    for midi, dur in bach_g_minor_opening:
+        n11.append(GroundTruthNote(midi=midi, start=t, end=t + dur - 0.03))
+        t += dur
+    write_clip(out_dir, "11_bach_bwv1001_opening",
+               synth_clip(n11, total_seconds=t + 0.5, vibrato_cents=15.0), n11)
+
+    # =====================================================================
+    # LEVEL 12: trill / mordent (rapid 2-note alternation).
+    # Tests whether the transcriber handles ornaments without producing
+    # 30 separate notes when it's really one ornament.
+    # =====================================================================
+    n12 = []
+    # Trill on A4: rapid B4 - A4 alternation at 8 Hz (= 32nd notes at 120 BPM)
+    # ~10 alternations over 0.6 seconds
+    t = 0.5
+    trill_pulse = 0.0625
+    for i in range(10):
+        midi = 71 if i % 2 == 0 else 69
+        n12.append(GroundTruthNote(midi=midi, start=t, end=t + trill_pulse - 0.005))
+        t += trill_pulse
+    # Resolve to A4 long
+    n12.append(GroundTruthNote(midi=69, start=t, end=t + 1.0))
+    t += 1.5
+    write_clip(out_dir, "12_trill_ornament",
+               synth_clip(n12, total_seconds=t + 0.5), n12)
+
     print(f"Wrote {len(list(out_dir.glob('*.wav')))} clips to {out_dir}")
 
 

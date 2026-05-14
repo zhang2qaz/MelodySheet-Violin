@@ -47,17 +47,22 @@ def _predict_at_thresholds(
         maximum_frequency=maximum_frequency_hz,
         multiple_pitch_bends=False,
     )
+    # Velocity floor 0.30: Basic Pitch's velocity is well-calibrated and
+    # anything below 0.30 is almost certainly an overtone / noise / weak
+    # secondary harmonic. Filtering at this layer prevents stray low-velocity
+    # high-pitched notes (e.g. an octave-above-tonic overtone in vibrato)
+    # from interrupting the downstream same-pitch grouping logic.
     return [
         (float(s), float(e), int(m), float(v))
         for s, e, m, v, _bend in note_events
-        if e > s and v > 0
+        if e > s and v >= 0.30
     ]
 
 
 def transcribe_violin_via_basic_pitch(
     audio_path: Path,
     *,
-    min_note_seconds: float = 0.08,
+    min_note_seconds: float = 0.05,  # 50 ms: 32nd note at 150 BPM, faster than that is implausible for a violin player
     onset_threshold: float = 0.3,
     frame_threshold: float = 0.2,
     minimum_frequency_hz: float = 180.0,   # ~ G3 (violin's lowest open string)
@@ -141,16 +146,28 @@ def transcribe_violin_via_basic_pitch(
     raw_sorted = sorted(raw, key=lambda evt: (evt[0], -evt[3]))
 
     def is_dominant_at_onset(note_idx: int) -> bool:
-        """Check whether note `note_idx` has the highest velocity among all
-        Basic Pitch events whose time interval contains this note's onset."""
-        my_start, _my_end, _my_midi, my_vel = raw_sorted[note_idx]
+        """Drop notes that are likely OVERTONES of a longer, louder note.
+
+        A note is considered an overtone false-positive when ANOTHER note
+        STRICTLY CONTAINS it in time (starts before AND ends after with
+        margin) AND has noticeably higher velocity. Genuine overlapping
+        notes (e.g. fast trills where Basic Pitch's onset slop causes the
+        previous note's end to spill into the next note's start) are
+        kept because neither contains the other -- they overlap by < 80ms.
+
+        Velocity gap requirement (0.15) prevents dropping legitimate
+        parallel notes with similar loudness; only suppresses notes where
+        another is clearly the louder voice.
+        """
+        my_start, my_end, _my_midi, my_vel = raw_sorted[note_idx]
         for other_idx, (s, e, _m, v) in enumerate(raw_sorted):
             if other_idx == note_idx:
                 continue
-            # Does `other` cover `my_start`? Use a small tolerance so a note
-            # that starts at exactly my_start (not yet sounding at my onset)
-            # doesn't count as covering it.
-            if s + 0.005 <= my_start <= e - 0.005 and v > my_vel:
+            strictly_contains = (
+                s + 0.005 <= my_start
+                and e >= my_end + 0.005
+            )
+            if strictly_contains and v > my_vel + 0.15:
                 return False
         return True
 
