@@ -158,37 +158,60 @@ def _validate_url(url: str) -> str:
 
 
 def _download_with_ytdlp(url: str, dest_path: Path) -> None:
-    """Download audio-only from a video URL via yt-dlp. Writes m4a/mp3/webm
-    to `dest_path` (we keep the extension yt-dlp picked). Throws on failure.
+    """Download audio-only from a video URL via yt-dlp.
+
+    HISTORICAL BUG: this used to call `shutil.which("yt-dlp")` to find a
+    yt-dlp CLI binary on PATH. That works for `pip install yt-dlp` in a
+    venv (which drops a yt-dlp.exe on the venv's bin/), but inside the
+    PyInstaller-frozen Windows installer there is NO yt-dlp.exe on PATH
+    -- yt-dlp ships as a bundled Python module under _MEIPASS. So the
+    check always failed in the installed product, with "服务器未安装
+    yt-dlp." Users hit it on every URL import.
+
+    Fix: import the Python module directly and use its programmatic API,
+    which works equally in dev (where the venv has the module) and in
+    the frozen installer (where PyInstaller bundles it into _MEIPASS).
     """
-    if shutil.which("yt-dlp") is None and shutil.which("youtube-dl") is None:
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import yt_dlp  # type: ignore[import-not-found]
+    except ImportError as exc:
         raise HTTPException(
             status_code=500,
-            detail="服务器未安装 yt-dlp。请直接上传本地音频文件。",
-        )
-    binary = "yt-dlp" if shutil.which("yt-dlp") else "youtube-dl"
-    import subprocess
-    dest_path.parent.mkdir(parents=True, exist_ok=True)
+            detail=f"未安装 yt-dlp Python 模块。请直接上传本地音频文件。({exc})",
+        ) from exc
+
     template = str(dest_path.parent / "original.%(ext)s")
-    cmd = [
-        binary,
-        "-x",                       # extract audio only
-        "--audio-format", "m4a",   # prefer m4a (no ffmpeg required for some sources)
-        "--audio-quality", "0",
-        "--no-playlist",
-        "--max-filesize", "200M",
-        "--no-warnings",
-        "-o", template,
-        url,
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-    if result.returncode != 0:
-        snippet = (result.stderr or result.stdout)[-500:]
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": template,
+        "noplaylist": True,
+        "max_filesize": 200 * 1024 * 1024,  # 200 MB
+        "quiet": True,
+        "no_warnings": True,
+        # Don't postprocess to m4a (would require ffmpeg in PATH which we
+        # may not have on Windows); take whatever stream URL provides.
+        # The main pipeline's convert_audio_to_wav handles arbitrary input.
+        "postprocessors": [],
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+    except yt_dlp.utils.DownloadError as exc:
+        # User-facing — strip the noisy traceback
+        msg = str(exc)
+        snippet = msg.splitlines()[-1] if msg else "download error"
         raise HTTPException(
             status_code=400,
-            detail=f"音频下载失败。{snippet.strip()}",
-        )
-    # Find the file yt-dlp produced
+            detail=f"音频下载失败：{snippet[:300]}",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"yt-dlp 内部错误：{type(exc).__name__}: {str(exc)[:200]}",
+        ) from exc
+
+    # Find the file yt-dlp produced (could be .m4a, .webm, .mp3, .opus, ...)
     candidates = sorted(dest_path.parent.glob("original.*"))
     if not candidates:
         raise HTTPException(status_code=500, detail="yt-dlp 没有输出可用音频。")

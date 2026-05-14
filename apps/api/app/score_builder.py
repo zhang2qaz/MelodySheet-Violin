@@ -167,7 +167,19 @@ def _build_part(track: Track) -> Any:
 
     try:
         part.makeMeasures(inPlace=True)
-        part.makeAccidentals(inPlace=True)
+        # cautionaryAll=True: force EVERY note to carry an explicit <accidental>
+        # tag in the MusicXML output (natural/sharp/flat as appropriate), even
+        # when the accidental matches the key signature. This is a defensive
+        # measure: OpenSheetMusicDisplay has historically had subtle bugs where
+        # an implicit accidental from a key signature is interpreted
+        # differently than an explicit one. Users reported "五线谱走调" --
+        # different pitches displayed than the piano-roll / 简谱 -- which is
+        # only possible if the renderer is applying the key-signature accidental
+        # against the data's intent. By writing every accidental explicitly we
+        # remove any room for the renderer to deviate from our MIDI numbers.
+        # The trade-off is a visually busier staff (lots of naturals showing
+        # explicitly) but the data is 100% unambiguous.
+        part.makeAccidentals(inPlace=True, cautionaryAll=True)
         # makeNotation handles "inexpressible" durations (e.g. a leading rest of
         # 2.24 quarters) by tying notes/rests across barlines into standard
         # note types. Without this MusicXML export raises on real recordings

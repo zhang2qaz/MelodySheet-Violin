@@ -139,11 +139,20 @@ def _identify_with_heuristic(audio: Any, sample_rate: int) -> list[dict[str, Any
         existing = deduped.get(key)
         if not existing or item["confidence"] > existing["confidence"]:
             deduped[key] = item
-    return sorted(deduped.values(), key=lambda item: item["confidence"], reverse=True)
+    # Sort by confidence then take ONLY the top candidate that crosses the
+    # plausibility threshold. The heuristic conditions overlap heavily
+    # (violin's spectral centroid range subsumes flute, guitar, erhu) so
+    # without this filter a single violin recording surfaces 3-4 wrong
+    # labels on the UI. Cap at 1 and require >=0.55 confidence so the
+    # frontend only shows results that are at least a marginal commitment.
+    ordered = sorted(deduped.values(), key=lambda item: item["confidence"], reverse=True)
+    return [ordered[0]] if ordered and ordered[0]["confidence"] >= 0.55 else []
 
 
 def identify_instruments(audio: Any, sample_rate: int) -> list[dict[str, Any]]:
     yamnet_result = _identify_with_yamnet(audio, sample_rate)
     if yamnet_result:
-        return yamnet_result
+        # YAMNet results: trust the model, but still cap at top-3 so the UI
+        # doesn't show every instrument in the orchestra for a single track.
+        return yamnet_result[:3]
     return _identify_with_heuristic(audio, sample_rate)
