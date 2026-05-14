@@ -25,19 +25,16 @@ def _midi_to_name(midi_number: int) -> str:
     return f"{names[midi_number % 12]}{midi_number // 12 - 1}"
 
 
-def transcribe_violin_via_basic_pitch(
+def _predict_at_thresholds(
     audio_path: Path,
     *,
-    min_note_seconds: float = 0.08,
-    onset_threshold: float = 0.5,
-    frame_threshold: float = 0.3,
-    minimum_frequency_hz: float = 180.0,   # ~ G3 (violin's lowest open string)
-    maximum_frequency_hz: float = 4000.0,  # well above violin's practical top
-) -> list[dict[str, Any]]:
-    """Run Basic Pitch on a wav/mp3 and return a monophonic note list in
-    the schema our existing pipeline expects (pitch, midi_number,
-    start_time, end_time, duration_seconds, duration_label, confidence).
-    """
+    onset_threshold: float,
+    frame_threshold: float,
+    minimum_note_ms: int,
+    minimum_frequency_hz: float,
+    maximum_frequency_hz: float,
+) -> list[tuple[float, float, int, float]]:
+    """Single Basic Pitch inference pass returning raw note events."""
     from basic_pitch.inference import predict, ICASSP_2022_MODEL_PATH
 
     _model_output, _midi_data, note_events = predict(
@@ -45,18 +42,75 @@ def transcribe_violin_via_basic_pitch(
         model_or_model_path=ICASSP_2022_MODEL_PATH,
         onset_threshold=onset_threshold,
         frame_threshold=frame_threshold,
-        minimum_note_length=int(min_note_seconds * 1000),
+        minimum_note_length=minimum_note_ms,
         minimum_frequency=minimum_frequency_hz,
         maximum_frequency=maximum_frequency_hz,
         multiple_pitch_bends=False,
     )
-
-    # note_events: list of (start_sec, end_sec, midi, velocity, pitch_bend_array)
-    raw = [
+    return [
         (float(s), float(e), int(m), float(v))
         for s, e, m, v, _bend in note_events
         if e > s and v > 0
     ]
+
+
+def transcribe_violin_via_basic_pitch(
+    audio_path: Path,
+    *,
+    min_note_seconds: float = 0.08,
+    onset_threshold: float = 0.3,
+    frame_threshold: float = 0.2,
+    minimum_frequency_hz: float = 180.0,   # ~ G3 (violin's lowest open string)
+    maximum_frequency_hz: float = 4000.0,  # well above violin's practical top
+) -> list[dict[str, Any]]:
+    """Run Basic Pitch on a wav/mp3 and return a monophonic note list in
+    the schema our existing pipeline expects.
+
+    THRESHOLD CALIBRATION (don't blindly raise these without a test panel):
+    --------------------------------------------------------------------
+    Basic Pitch's documented defaults are onset=0.5, frame=0.3. Those are
+    tuned for the studio-quality recordings in MAESTRO/Slakh -- loud,
+    well-mic'd, low noise floor. On a quiet user-recorded violin clip
+    (RMS median 0.10, no compression, room mic) those defaults gate out
+    ~80 % of real notes. Observed empirically on an 8 s clip:
+
+        onset=0.50 frame=0.30  ->  7 events,  4 unique pitches  (too few)
+        onset=0.30 frame=0.20  -> 18 events, 10 unique pitches  (good)
+        onset=0.20 frame=0.15  -> 66 events                     (too many)
+
+    Adaptive retry below catches the rare case where even 0.30/0.20
+    gates too aggressively (very quiet pianissimo passages).
+    """
+    minimum_note_ms = int(min_note_seconds * 1000)
+
+    # First pass at standard thresholds.
+    raw = _predict_at_thresholds(
+        audio_path,
+        onset_threshold=onset_threshold,
+        frame_threshold=frame_threshold,
+        minimum_note_ms=minimum_note_ms,
+        minimum_frequency_hz=minimum_frequency_hz,
+        maximum_frequency_hz=maximum_frequency_hz,
+    )
+
+    # Adaptive retry: if first pass is suspiciously sparse (< 0.5 notes per
+    # second), drop thresholds and try again. Real performances have >=1
+    # note/sec; <0.5 means we almost certainly missed the bulk.
+    if raw:
+        approx_audio_seconds = max(e for _s, e, _m, _v in raw)
+        notes_per_sec = len(raw) / max(approx_audio_seconds, 1.0)
+        if notes_per_sec < 0.5:
+            retry = _predict_at_thresholds(
+                audio_path,
+                onset_threshold=0.2,
+                frame_threshold=0.15,
+                minimum_note_ms=minimum_note_ms,
+                minimum_frequency_hz=minimum_frequency_hz,
+                maximum_frequency_hz=maximum_frequency_hz,
+            )
+            if len(retry) > len(raw) * 2:
+                raw = retry
+
     if not raw:
         return []
 
