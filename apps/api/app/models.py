@@ -48,8 +48,6 @@ class JobResult(BaseModel):
     chord_count: int = 0
     tab_url: Optional[str] = None
     tab_txt_url: Optional[str] = None
-    drums_url: Optional[str] = None
-    drum_hit_count: int = 0
     sections_url: Optional[str] = None
     section_count: int = 0
     available_stems: Dict[str, str] = Field(default_factory=dict)

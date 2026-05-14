@@ -110,7 +110,6 @@ hiddenimports += [
     "app.spectrogram",
     "app.chord_detect",
     "app.guitar_tab",
-    "app.drum_transcribe",
     "app.section_detect",
     "app.multi_instrument",
     "app.user_profile",

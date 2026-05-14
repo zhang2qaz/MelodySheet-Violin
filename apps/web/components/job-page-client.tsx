@@ -10,7 +10,6 @@ import { MusicXmlViewer } from "@/components/musicxml-viewer";
 import { SpectrogramView } from "@/components/spectrogram-view";
 import { ChordsView } from "@/components/chords-view";
 import { TabView } from "@/components/tab-view";
-import { DrumsView } from "@/components/drums-view";
 import { SectionsView } from "@/components/sections-view";
 import { PianoRollEditor } from "@/components/piano-roll-editor";
 import { StemsPlayer } from "@/components/stems-player";
@@ -164,7 +163,6 @@ export function JobPageClient({ jobId }: { jobId: string }) {
           <MusicXmlViewer musicXmlUrl={result.musicxml_url} />
           <ChordsView chordsUrl={result.chords_url} />
           <TabView tabUrl={result.tab_url} />
-          <DrumsView drumsUrl={result.drums_url} />
           <StemsPlayer stems={result.available_stems || {}} />
           <SpectrogramView spectrogramUrl={result.spectrogram_url} />
           <NumberedNotationView notation={numberedNotation} />

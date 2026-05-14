@@ -170,7 +170,7 @@ def get_file(job_id: str, filename: str) -> FileResponse:
     allowed_outputs = {
         "melody.mid", "melody.musicxml", "numbered.json", "notes.json",
         "spectrogram.png", "melody.ly", "melody.abc",
-        "chords.json", "tab.json", "tab.txt", "drums.json", "sections.json",
+        "chords.json", "tab.json", "tab.txt", "sections.json",
     }
 
     if filename == allowed_upload:

@@ -1036,25 +1036,13 @@ def process_job_v2(
     except Exception:
         pass
 
-    # Drum transcription — runs on the demucs drums stem when available,
-    # else on the full mix. Output: list of (time, instrument) hits.
-    drum_hits: list[dict[str, Any]] = []
-    try:
-        from app.drum_transcribe import transcribe_drums
-        from app.audio_io import load_audio_mono
-
-        # Locate a drums stem produced by the earlier separation pass.
-        drums_audio = audio
-        drums_sr = sample_rate
-        demucs_drums_path = work_dir / "demucs_6s"
-        if demucs_drums_path.exists():
-            for path in demucs_drums_path.glob("**/drums.wav"):
-                drums_audio, drums_sr = load_audio_mono(path)
-                break
-        drum_hits = transcribe_drums(drums_audio, drums_sr)
-        write_json(outputs_path / "drums.json", {"hits": drum_hits})
-    except Exception:
-        pass
+    # NOTE: drum-hit transcription (kick/snare/hat classification from onsets)
+    # was REMOVED. The energy-band heuristic produced too many false hits to
+    # be useful, and users complained the UI showed misleading "drum count"
+    # numbers for non-drum recordings. Demucs drum-stem separation still runs
+    # (the .wav stem is still produced and exposed via /api/files/.../drums.wav
+    # for users who want to mute drums) -- only the per-hit classification +
+    # drums.json output is gone.
 
     # Song structure / section detection (A-B-A-B pattern labels).
     sections_payload: list[dict[str, Any]] = []
@@ -1128,7 +1116,6 @@ def process_job_v2(
         "demucs_stems_used": stems_used,
         "per_track_outputs": per_track_paths,
         "chord_count": len(chords_payload),
-        "drum_hit_count": len(drum_hits),
         "section_count": len(sections_payload),
         "available_stems": available_stems,
         "multi_track_summary": multi_track_summary,

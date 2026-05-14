@@ -34,8 +34,6 @@ export type JobResult = {
   chord_count?: number;
   tab_url: string | null;
   tab_txt_url: string | null;
-  drums_url: string | null;
-  drum_hit_count?: number;
   sections_url: string | null;
   section_count?: number;
   available_stems: Record<string, string>;

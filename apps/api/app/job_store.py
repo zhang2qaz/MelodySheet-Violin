@@ -53,7 +53,6 @@ def result_urls(job_id: str, extension: str) -> dict[str, Any]:
         "chords_url": f"/api/files/{job_id}/chords.json",
         "tab_url": f"/api/files/{job_id}/tab.json",
         "tab_txt_url": f"/api/files/{job_id}/tab.txt",
-        "drums_url": f"/api/files/{job_id}/drums.json",
         "sections_url": f"/api/files/{job_id}/sections.json",
     }
 
