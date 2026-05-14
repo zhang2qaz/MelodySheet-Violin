@@ -78,6 +78,14 @@ for pkg in (
     "onnxruntime",
     "matplotlib",      # spectrogram rendering
     # yt_dlp removed: URL-import feature deleted (unreliable anti-bot evasion).
+    # Demucs source separation -- default-on for accompanied recordings.
+    "torch",
+    "torchaudio",
+    "demucs",
+    "julius",          # demucs uses this for filter ops
+    "openunmix",       # demucs wraps this as one of its backends
+    "dora",            # config plumbing demucs uses internally (dora-search)
+    "omegaconf",       # demucs hparams
 ):
     try:
         sub_datas, sub_binaries, sub_hidden = collect_all(pkg)

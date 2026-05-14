@@ -10,6 +10,11 @@ soundfile>=0.12.1
 numpy>=1.24.0
 scipy>=1.10.0
 matplotlib>=3.7.0
+# Demucs source separation (htdemucs_6s) -- isolates the "other" stem
+# where bowed strings land, before transcription. Default-on. Pulls in
+# PyTorch (~700 MB) so the installer grows substantially; users with
+# accompanied recordings see the biggest accuracy win.
+demucs>=4.0.0
 pytest>=8.2.0
 httpx>=0.27.0
 
