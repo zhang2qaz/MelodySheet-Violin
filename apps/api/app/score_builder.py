@@ -46,6 +46,61 @@ class Track:
     meter: str = "4/4"
 
 
+# Tonic pitch classes used to decide whether a key prefers sharp- or
+# flat-spellings for chromatic notes. Anything in SHARP_KEY_TONICS prefers
+# sharps (C# rather than Db), anything in FLAT_KEY_TONICS prefers flats.
+# C major / A minor are neutral -- we default to flats there (matches the
+# spelling _midi_to_name uses internally in transcribe_mono.py, so the
+# round-trip stays consistent).
+_SHARP_KEY_TONICS = {"G", "D", "A", "E", "B", "F#", "C#"}
+_FLAT_KEY_TONICS = {"F", "Bb", "Eb", "Ab", "Db", "Gb", "Cb"}
+
+# Two spellings of the 12-tone chromatic scale -- pick one based on the
+# detected key. This is what guarantees 简谱 (which uses
+# scale_degree_for_pitch) and 五线谱 (built here) agree on every
+# accidental: BOTH derive from the same MIDI number through the same
+# key-context spelling, instead of two parallel paths through music21
+# that can disagree under enharmonic respelling.
+_SHARP_SPELLINGS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+_FLAT_SPELLINGS  = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
+
+
+def _midi_to_canonical_pitch_string(midi: int, detected_key: str) -> str:
+    """Convert a MIDI number to a pitch string (e.g. 'Bb4') using the
+    detected key's accidental preference.
+
+    Why this exists: the audio pipeline writes each note's 'pitch' as a
+    string produced by transcribe_mono's `_midi_to_name`, which uses a
+    FIXED hybrid spelling (C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B).
+    That spelling is inconsistent with most keys -- e.g. it always writes
+    'Bb' even in B major (where it would clash with the F# / C# / etc
+    in the key signature) or in G major (where 'A#' is more natural in
+    a melodic context). When music21 then renders this through
+    makeAccidentals, it sometimes respells the note to fit the key,
+    causing the staff view to show different accidentals than the
+    numbered notation derived from the SAME MIDI number.
+
+    Fix: derive the pitch string here, from MIDI + key tonic, using the
+    same accidental-direction preference the key signature shows. Both
+    the staff and the numbered notation now derive from MIDI through
+    this single canonical path, so they cannot disagree.
+    """
+    tonic = (detected_key or "C major").strip().split()[0] if detected_key else "C"
+    if tonic in _SHARP_KEY_TONICS:
+        spelling = _SHARP_SPELLINGS
+    elif tonic in _FLAT_KEY_TONICS:
+        spelling = _FLAT_SPELLINGS
+    else:
+        # C major / A minor and unrecognised keys -> default to flats so the
+        # result matches transcribe_mono._midi_to_name (which uses flats for
+        # Eb / Ab / Bb). Choosing sharps here would silently change spelling
+        # for every C-major recording in the corpus.
+        spelling = _FLAT_SPELLINGS
+    pitch_class = int(midi) % 12
+    octave = int(midi) // 12 - 1
+    return f"{spelling[pitch_class]}{octave}"
+
+
 def _make_music21_instrument(instrument_module: Any, target_instrument: str) -> Any:
     mapping = {
         "violin": instrument_module.Violin,
@@ -103,15 +158,31 @@ def _build_part(track: Track) -> Any:
     seconds_per_quarter = 60.0 / max(track.tempo_bpm, 1)
     cursor_quarters = 0.0
 
-    # MusicXML can't express arbitrary quarter-lengths, only standard note types
-    # plus dotted variants. We pre-compute the set of representable durations so
-    # leading rests and split rests use values that round-trip cleanly.
-    standard_quarter_lengths = (4.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.375, 0.25, 0.125, 0.0625)
+    # =====================================================================
+    # SCORE-SANITY DURATION GRID
+    #
+    # We deliberately cap the rest grid at 16th notes (0.25 quarter). The
+    # previous implementation allowed 32nd and 64th rests (0.125 / 0.0625
+    # quarter) which gave music21 the leeway to render gaps like 1.0625
+    # quarter as "quarter rest + 64th rest". On user-uploaded violin
+    # recordings this produced visually busy scores littered with tiny
+    # rest symbols that aren't musically meaningful -- the original
+    # performer's micro-timing variance below a 16th note isn't
+    # information a violin student practicing from the score needs to
+    # see, just noise.
+    #
+    # Notes themselves still allow 32nd / 16th durations (handled when
+    # the note is converted to music21.note.Note), so genuinely fast
+    # passages aren't restricted. Only the rest grid is coarsened.
+    # =====================================================================
+    standard_quarter_lengths = (4.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.375, 0.25)
+    MIN_REST_QUARTERS = 0.25   # rest >= 16th note or drop entirely
+    MIN_GAP_TO_INSERT_REST = 0.25
 
     def split_into_standard(total_quarters: float) -> list[float]:
         result: list[float] = []
         remaining = total_quarters
-        while remaining > 0.0625 - 1e-6:
+        while remaining > MIN_REST_QUARTERS - 1e-6:
             for candidate in standard_quarter_lengths:
                 if remaining + 1e-6 >= candidate:
                     result.append(candidate)
@@ -130,7 +201,13 @@ def _build_part(track: Track) -> Any:
         if duration_quarters <= 0:
             continue
 
-        if start_quarters - cursor_quarters > 0.125:
+        # Only insert a rest if the gap is at least a 16th note. Smaller
+        # gaps are absorbed by the previous note (its end_time conceptually
+        # extends to the next note's onset) or by the next note (its
+        # onset snaps to the previous note's end). This is the music
+        # editor's convention -- gaps under a 16th note aren't typically
+        # notated as a rest, just as part of the surrounding articulation.
+        if start_quarters - cursor_quarters > MIN_GAP_TO_INSERT_REST:
             for piece in split_into_standard(start_quarters - cursor_quarters):
                 rest = note.Rest()
                 rest.duration = duration.Duration(piece)
@@ -140,12 +217,24 @@ def _build_part(track: Track) -> Any:
         # Split notes into tied pieces of standard quarter-lengths so that
         # MusicXML export doesn't fail on values like 2.24 quarters that come
         # out of beat-grid quantization.
+        # Canonical pitch derivation: re-spell from MIDI + detected_key
+        # so the staff view uses the SAME accidental as the numbered
+        # notation. Falls back to whatever the upstream pipeline wrote
+        # in raw["pitch"] if MIDI isn't present (legacy data shape).
+        midi_for_note = raw.get("midi_number")
+        if isinstance(midi_for_note, (int, float)):
+            canonical_pitch_str = _midi_to_canonical_pitch_string(
+                int(midi_for_note), track.detected_key
+            )
+        else:
+            canonical_pitch_str = raw.get("pitch", "C4")
+
         pieces = split_into_standard(duration_quarters) or [0.25]
         first_note = None
         last_note = None
         for piece in pieces:
             try:
-                generated = note.Note(raw["pitch"])
+                generated = note.Note(canonical_pitch_str)
             except Exception:
                 generated = None
             if generated is None:
