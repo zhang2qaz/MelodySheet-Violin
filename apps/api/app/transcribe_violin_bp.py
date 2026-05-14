@@ -25,6 +25,110 @@ def _midi_to_name(midi_number: int) -> str:
     return f"{names[midi_number % 12]}{midi_number // 12 - 1}"
 
 
+def _crepe_cross_validate(
+    notes: list[dict[str, Any]],
+    audio_path: Path,
+    *,
+    pitch_disagreement_semitones: float = 1.0,
+    crepe_min_periodicity: float = 0.7,
+) -> list[dict[str, Any]]:
+    """Ensemble pitch correction: run CREPE on the audio, and for each
+    Basic-Pitch note check whether CREPE's median pitch over that note's
+    window agrees. When they disagree by more than `pitch_disagreement_
+    semitones` AND CREPE has high confidence at that window, OVERRIDE the
+    Basic-Pitch pitch with CREPE's reading.
+
+    Why "override" not "drop": dropping reduces recall. CREPE is generally
+    more accurate than BP on monophonic solo violin (it's specifically
+    trained on monophonic f0 contours, while BP is polyphonic-by-default
+    and sometimes locks onto the wrong overtone). When the two SOTA
+    models disagree on a clearly-voiced note, CREPE's vote usually wins
+    on solo instruments. When CREPE is unsure (low periodicity), defer
+    to BP's choice.
+
+    Falls back silently to passing notes through unchanged if torchcrepe
+    isn't installed.
+    """
+    if not notes:
+        return notes
+    try:
+        import torch
+        import torchcrepe
+        import numpy as np
+        import soundfile as sf
+    except ImportError:
+        return notes
+
+    try:
+        audio, sr = sf.read(str(audio_path))
+    except Exception:
+        return notes
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+    audio_tensor = torch.tensor(audio.astype("float32")).unsqueeze(0)
+
+    hop_length = int(sr * 0.01)  # 10 ms grid
+    try:
+        pitch, periodicity = torchcrepe.predict(
+            audio_tensor, sr,
+            hop_length=hop_length,
+            fmin=180.0, fmax=4000.0,
+            model="tiny",
+            decoder=torchcrepe.decode.viterbi,
+            return_periodicity=True,
+            batch_size=2048,
+            device="cpu",
+        )
+    except Exception:
+        return notes
+
+    pitch_np = pitch[0].numpy()
+    period_np = periodicity[0].numpy()
+    # Convert Hz to MIDI
+    valid = (pitch_np > 0) & np.isfinite(pitch_np)
+    midi_np = np.full_like(pitch_np, np.nan)
+    midi_np[valid] = 69 + 12 * np.log2(pitch_np[valid] / 440.0)
+    frame_times = np.arange(len(pitch_np)) * hop_length / sr
+
+    corrected = []
+    for note in notes:
+        start = float(note["start_time"])
+        end = float(note["end_time"])
+        # Frames whose center is inside [start+10ms, end-10ms] -- skip the
+        # attack/release transients which CREPE handles less reliably.
+        margin = 0.01
+        mask = (frame_times >= start + margin) & (frame_times <= end - margin)
+        if not mask.any():
+            corrected.append(note)
+            continue
+        period_in_window = period_np[mask]
+        midi_in_window = midi_np[mask]
+        confident = period_in_window > crepe_min_periodicity
+        if not confident.any():
+            corrected.append(note)
+            continue
+        crepe_midi = float(np.median(midi_in_window[confident]))
+        if not np.isfinite(crepe_midi):
+            corrected.append(note)
+            continue
+        bp_midi = int(note["midi_number"])
+        diff = crepe_midi - bp_midi
+        if abs(diff) >= pitch_disagreement_semitones:
+            # Override with CREPE's rounded midi.
+            new_midi = int(round(crepe_midi))
+            new_note = {
+                **note,
+                "midi_number": new_midi,
+                "pitch": _midi_to_name(new_midi),
+                "crepe_override": True,
+                "crepe_midi_float": round(crepe_midi, 2),
+            }
+            corrected.append(new_note)
+        else:
+            corrected.append(note)
+    return corrected
+
+
 def _predict_at_thresholds(
     audio_path: Path,
     *,
@@ -279,6 +383,24 @@ def transcribe_violin_via_basic_pitch(
                 "pitch_bend_direction": None,
             }
         )
+
+    # =====================================================================
+    # CREPE ensemble cross-validation.
+    #
+    # Basic Pitch is the strongest open polyphonic transcriber but it
+    # sometimes locks onto the wrong overtone or misses a fundamental.
+    # CREPE is purpose-built for monophonic f0 tracking and is widely
+    # benchmarked as more accurate than BP on solo melodic instruments.
+    #
+    # We use CREPE as a SECOND OPINION: for each BP note, check whether
+    # CREPE's median pitch over the same time window agrees. When they
+    # disagree by >=1 semitone AND CREPE is confident (periodicity >0.7),
+    # override BP's pitch with CREPE's reading.
+    #
+    # Cost: ~3 s of CREPE inference per 5 s of audio on CPU (tiny model).
+    # Skipped silently if torchcrepe isn't installed.
+    # =====================================================================
+    notes = _crepe_cross_validate(notes, audio_path)
     return notes
 
 

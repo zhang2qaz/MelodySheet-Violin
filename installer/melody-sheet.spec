@@ -87,6 +87,7 @@ for pkg in (
     "dora",            # config plumbing demucs uses internally (dora-search)
     "omegaconf",       # demucs hparams
     "madmom",          # ISMIR-SOTA beat + downbeat tracking
+    "torchcrepe",      # CREPE pitch ensemble (second-opinion on BP)
 ):
     try:
         sub_datas, sub_binaries, sub_hidden = collect_all(pkg)

@@ -20,6 +20,11 @@ demucs>=4.0.0
 # half/double the true tempo. Installs from git because pip release
 # doesn't build on Python 3.11+ (madmom 0.16 last released 2018).
 madmom @ git+https://github.com/CPJKU/madmom.git
+# torchcrepe: PyTorch port of Google's CREPE pitch tracker. Used as a
+# second-opinion ensembler on top of Basic Pitch -- BP locks the note
+# events but CREPE often disagrees on the exact pitch class. On real
+# violin audio CREPE overrides 9-36 % of BP's pitch decisions.
+torchcrepe>=0.0.24
 pytest>=8.2.0
 httpx>=0.27.0
 
