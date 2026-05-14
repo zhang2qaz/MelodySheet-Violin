@@ -436,6 +436,44 @@ def transcribe_monophonic(
             continue
         pruned.append(item)
 
+    # =====================================================================
+    # PRIMARY CONFIDENCE GATE -- the most impactful single filter.
+    #
+    # pYIN's voiced_prob is the probability that the analysis window was
+    # voiced at the tracked pitch. The pipeline already records this as
+    # `confidence` in each note BUT never uses it to filter.
+    #
+    # Diagnostic on a real user recording (job 736fa...) found:
+    #   total notes: 187
+    #   median confidence: 0.29
+    #   notes with conf < 0.6: 154 (82 % !!)
+    # These low-confidence notes are pYIN essentially saying "I have no idea
+    # if there's a real pitch here, but here's my best guess from the noise."
+    # The user perceives them as 鬼音 / ghost notes -- random pitches scattered
+    # all over the score that don't match what they actually played.
+    #
+    # 0.55 threshold rationale (from typical pYIN voicing distribution):
+    #   loud sustained note            : 0.80 - 0.95   KEEP
+    #   quiet but clean note           : 0.55 - 0.75   KEEP
+    #   attack transient / bow noise   : 0.20 - 0.45   DROP
+    #   background hiss / silence      : 0.00 - 0.20   DROP
+    #
+    # Safety net: if this gate happens to drop everything (e.g. a very quiet
+    # recording where pYIN runs cold), fall back to a lower threshold rather
+    # than returning an empty score.
+    # =====================================================================
+    CONFIDENCE_GATE = 0.55
+    confident = [n for n in pruned if float(n.get("confidence", 1.0)) >= CONFIDENCE_GATE]
+    if confident:
+        pruned = confident
+    else:
+        # Don't strand the user with an empty score. Halve the gate and try
+        # again; if still empty, return whatever survived the earlier filters.
+        relaxed = [n for n in pruned if float(n.get("confidence", 1.0)) >= 0.30]
+        if relaxed:
+            pruned = relaxed
+        # else: keep the original `pruned` so SOMETHING comes back.
+
     for index, note in enumerate(pruned, start=1):
         note["index"] = index
         # The bookkeeping fields aren't part of the public note schema; strip them.
