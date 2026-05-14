@@ -157,7 +157,10 @@ if (-not $SkipWebBuild) {
         # =====================================================================
         $outDir = Join-Path $webDir "out"
         if (-not (Test-Path $outDir)) {
-            throw "[build] Static export missing at $outDir — `next build` did not produce out/."
+            # NOTE: do not use backticks in PowerShell strings — they are the
+            # escape character, NOT a quote marker. Past version of this file
+            # had backticks around 'next build' and broke the parser entirely.
+            throw "[build] Static export missing at $outDir -- next build did not produce out/."
         }
         $offender = Get-ChildItem -Path $outDir -Recurse -Include *.js,*.html -ErrorAction SilentlyContinue |
             Select-String -Pattern "localhost:8000" -List -ErrorAction SilentlyContinue |
