@@ -122,9 +122,50 @@ if (-not $SkipWebBuild) {
     }
     Push-Location $webDir
     try {
-        $env:NEXT_OUTPUT = "export"
-        $env:NEXT_PUBLIC_API_BASE_URL = ""
+        # PowerShell gotcha: `$env:VAR = ""` is treated as Remove-Item env:VAR
+        # in some PS versions, which leaves the variable UNDEFINED when
+        # `next build` reads it. Use the .NET API to force a true empty
+        # string into the process environment. The api.ts code now also
+        # treats production+undefined as same-origin so we have double
+        # protection, but we still want the env var to behave correctly.
+        [System.Environment]::SetEnvironmentVariable("NEXT_OUTPUT", "export", "Process")
+        [System.Environment]::SetEnvironmentVariable("NEXT_PUBLIC_API_BASE_URL", "", "Process")
+        # Sanity check — surface the env state to build logs so we don't ever
+        # silently regress this. If the var is missing here the installer's
+        # bundled JS will hardcode http://localhost:8000.
+        $envVal = [System.Environment]::GetEnvironmentVariable("NEXT_PUBLIC_API_BASE_URL", "Process")
+        if ($null -eq $envVal) {
+            Write-Host "[build] WARNING: NEXT_PUBLIC_API_BASE_URL is null after SetEnvironmentVariable — same-origin fallback in api.ts will kick in." -ForegroundColor Yellow
+        } else {
+            Write-Host "[build] NEXT_PUBLIC_API_BASE_URL='$envVal' (len=$($envVal.Length))"
+        }
         npm run build
+
+        # =====================================================================
+        # POST-BUILD GUARD — the killer regression check.
+        #
+        # History: we have shipped TWO bad installers in a row that hardcoded
+        # http://localhost:8000 into the bundled JS, even though api.ts looked
+        # correct in source. Root cause was PowerShell silently turning
+        # `$env:VAR = ""` into Remove-Item, so the prod build saw env=undefined
+        # and fell through to the localhost fallback.
+        #
+        # Even with all the source-level defenses, ONLY a post-build artifact
+        # check can prove the shipped JS is correct. If you ever see this guard
+        # fire in CI, do NOT ship the installer — something in the build chain
+        # changed and the fallback URL is back in the bundle.
+        # =====================================================================
+        $outDir = Join-Path $webDir "out"
+        if (-not (Test-Path $outDir)) {
+            throw "[build] Static export missing at $outDir — `next build` did not produce out/."
+        }
+        $offender = Get-ChildItem -Path $outDir -Recurse -Include *.js,*.html -ErrorAction SilentlyContinue |
+            Select-String -Pattern "localhost:8000" -List -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($null -ne $offender) {
+            throw "[build] FATAL: 'localhost:8000' found in shipped bundle at $($offender.Path):$($offender.LineNumber). The installer would point at the wrong API. Refusing to package."
+        }
+        Write-Host "[build] Post-build URL guard passed — no localhost:8000 in shipped JS." -ForegroundColor Green
     } finally {
         Pop-Location
     }

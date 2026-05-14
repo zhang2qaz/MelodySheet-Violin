@@ -8,36 +8,71 @@ import type {
 } from "@/lib/types";
 
 /**
- * Resolve the API base URL with three modes:
+ * Resolve the API base URL.
  *
- *   undefined env var → "http://localhost:8000" (dev default, when the web
- *                       app is running separately from the api)
- *   empty string ""   → use current page origin (the installer bundle
- *                       serves frontend + api from the same FastAPI port,
- *                       so we want same-origin relative URLs)
- *   any other value   → use that explicit URL (e.g. behind a reverse proxy)
+ * We have two deployment modes and one dev mode:
  *
- * The old logic used `||` which treated "" as falsy and clobbered the
- * "same-origin" intent of the installer build, causing the installed exe
- * to point at http://localhost:8000 (where nothing was listening).
+ *   1. Dev split: `npm run dev` (port 3000) + `uvicorn main:app` (port 8000).
+ *      Different origins, so the web app needs an explicit cross-origin URL
+ *      to reach the API. Resolved to "http://localhost:8000".
+ *
+ *   2. Installer (Windows .exe / macOS .app): the PyInstaller-frozen FastAPI
+ *      serves BOTH the static Next.js export AND the JSON API from the same
+ *      port (127.0.0.1:8765 typically). Same-origin, so we use
+ *      `window.location.origin` for everything.
+ *
+ *   3. Reverse-proxy / hosted: explicit URL injected via env var.
+ *
+ * Decision flow:
+ *   - env explicitly set to non-empty string  → use it (mode 3)
+ *   - env explicitly set to ""                → same-origin (mode 2, the
+ *                                               bash-friendly way to opt in)
+ *   - env undefined AND production build      → same-origin (mode 2, because
+ *                                               PowerShell `$env:VAR = ""`
+ *                                               silently deletes the var on
+ *                                               Windows — we cannot rely on
+ *                                               "" surviving the build step)
+ *   - env undefined AND development           → localhost:8000 (mode 1)
+ *
+ * The original `||` logic was broken because empty-string was falsy AND
+ * because Windows PowerShell wouldn't reliably set it to "" anyway.
  */
 const ENV_BASE: string | undefined = process.env.NEXT_PUBLIC_API_BASE_URL;
 const TRIMMED_ENV: string | undefined =
   typeof ENV_BASE === "string" ? ENV_BASE.replace(/\/$/, "") : undefined;
+const IS_PROD: boolean = process.env.NODE_ENV === "production";
 
 export function apiBaseUrl(): string {
-  if (TRIMMED_ENV === undefined) return "http://localhost:8000";
-  if (TRIMMED_ENV === "") {
-    if (typeof window !== "undefined" && window.location) {
+  // Mode 3: explicit cross-origin URL (e.g. behind a reverse proxy)
+  if (typeof TRIMMED_ENV === "string" && TRIMMED_ENV !== "") {
+    return TRIMMED_ENV;
+  }
+  // Modes 1+2: no explicit URL.
+  // In a browser, same-origin works for the installer AND is harmless for
+  // hosted deploys (where the JS would be served from the same domain anyway).
+  // In dev (NODE_ENV=development), fall through to localhost:8000 because the
+  // dev server runs on a different port than uvicorn.
+  if (typeof window !== "undefined" && window.location) {
+    if (IS_PROD || TRIMMED_ENV === "") {
       return window.location.origin;
     }
-    return "";
+    return "http://localhost:8000";
   }
-  return TRIMMED_ENV;
+  // SSR/build-time: no window. Production exports relative URLs (handled by
+  // caller adding "/api/..." to ""), dev falls back to localhost.
+  if (IS_PROD || TRIMMED_ENV === "") return "";
+  return "http://localhost:8000";
 }
 
-// Compatibility re-export: prefer apiBaseUrl() in new code.
-export const API_BASE_URL = TRIMMED_ENV ?? "http://localhost:8000";
+// Compatibility re-export: prefer apiBaseUrl() in new code. This is a
+// build-time constant so it cannot do the window.location dance — call sites
+// that need installer support must use apiBaseUrl().
+export const API_BASE_URL =
+  typeof TRIMMED_ENV === "string" && TRIMMED_ENV !== ""
+    ? TRIMMED_ENV
+    : IS_PROD
+      ? ""
+      : "http://localhost:8000";
 
 export function apiUrl(path: string | null | undefined): string {
   if (!path) return "";

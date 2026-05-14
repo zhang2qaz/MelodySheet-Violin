@@ -80,6 +80,22 @@ if [[ -z "${SKIP_WEB:-}" ]]; then
     pushd "$WEB_DIR" >/dev/null
     npm ci
     NEXT_OUTPUT=export NEXT_PUBLIC_API_BASE_URL="" npm run build
+
+    # Post-build guard — same paranoia as build.ps1. We have shipped a bad
+    # Windows installer (twice!) that hardcoded http://localhost:8000 into the
+    # bundle. A grep over the shipped artifact is the ONE check that can prove
+    # the bundle is correct regardless of what env vars / api.ts / next build
+    # decided to do. Fail loudly here rather than ship the wrong URL.
+    if [[ ! -d out ]]; then
+        echo "[build] FATAL: Static export missing at out/ — next build did not produce it." >&2
+        exit 1
+    fi
+    if grep -rqI 'localhost:8000' out/; then
+        echo "[build] FATAL: 'localhost:8000' found in shipped bundle below. Refusing to package." >&2
+        grep -rIn 'localhost:8000' out/ | head -5 >&2
+        exit 1
+    fi
+    echo "[build] Post-build URL guard passed — no localhost:8000 in shipped JS."
     popd >/dev/null
 fi
 
