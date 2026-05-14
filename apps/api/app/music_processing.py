@@ -934,7 +934,14 @@ def process_job_v2(
 
     update_job(job_id, config, status="transcribing", progress=55, error=None)
     tempo_bpm, beats = estimate_tempo_and_beats(audio, sample_rate)
-    meter = estimate_meter(beats, audio, sample_rate)
+    # Try madmom RNN-based meter detection first (ISMIR SOTA); fall back
+    # to the librosa flux-heuristic estimate_meter if madmom can't decide.
+    # madmom needs a file path, not raw audio.
+    try:
+        from app.rhythm import estimate_meter_madmom
+        meter = estimate_meter_madmom(str(wav_path), fallback_meter="4/4")
+    except Exception:
+        meter = estimate_meter(beats, audio, sample_rate)
 
     if profile["is_monophonic"]:
         # =================================================================

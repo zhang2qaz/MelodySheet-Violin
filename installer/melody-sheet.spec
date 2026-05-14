@@ -86,6 +86,7 @@ for pkg in (
     "openunmix",       # demucs wraps this as one of its backends
     "dora",            # config plumbing demucs uses internally (dora-search)
     "omegaconf",       # demucs hparams
+    "madmom",          # ISMIR-SOTA beat + downbeat tracking
 ):
     try:
         sub_datas, sub_binaries, sub_hidden = collect_all(pkg)

@@ -15,9 +15,34 @@ DURATION_QUARTERS_TO_LABEL: list[tuple[float, str]] = [
 
 
 def estimate_tempo_and_beats(audio: Any, sample_rate: int) -> tuple[float, list[float]]:
+    """Beat + tempo estimation.
+
+    Prefers madmom (RNN-based, ISMIR SOTA) when available; falls back to
+    librosa.beat.beat_track (heuristic spectral-flux). librosa is famously
+    bad at half/double tempo errors -- on a single test recording we
+    measured librosa 144 BPM vs madmom 70 BPM (madmom right).
+    """
     import librosa
     import numpy as np
 
+    # Try madmom first.
+    try:
+        from madmom.features.beats import DBNBeatTrackingProcessor, RNNBeatProcessor
+
+        if not hasattr(estimate_tempo_and_beats, "_madmom_beat_proc"):
+            estimate_tempo_and_beats._madmom_beat_proc = RNNBeatProcessor()  # type: ignore[attr-defined]
+            estimate_tempo_and_beats._madmom_beat_tracker = DBNBeatTrackingProcessor(fps=100)  # type: ignore[attr-defined]
+        # madmom takes a path OR raw audio (numpy). Pass numpy.
+        beat_activations = estimate_tempo_and_beats._madmom_beat_proc(audio)  # type: ignore[attr-defined]
+        beats_array = estimate_tempo_and_beats._madmom_beat_tracker(beat_activations)  # type: ignore[attr-defined]
+        if len(beats_array) >= 2:
+            tempo_value = float(60.0 / np.median(np.diff(beats_array)))
+            if 30 <= tempo_value <= 300:
+                return tempo_value, [float(t) for t in beats_array]
+    except Exception:
+        pass
+
+    # Librosa fallback.
     onset_env = librosa.onset.onset_strength(y=audio, sr=sample_rate, aggregate=np.median)
     tempo, beats = librosa.beat.beat_track(
         onset_envelope=onset_env, sr=sample_rate, units="time", tightness=120
@@ -26,6 +51,34 @@ def estimate_tempo_and_beats(audio: Any, sample_rate: int) -> tuple[float, list[
     if tempo_value <= 0 or not np.isfinite(tempo_value):
         tempo_value = 90.0
     return tempo_value, [float(t) for t in beats]
+
+
+def estimate_meter_madmom(audio_path: Any, fallback_meter: str = "4/4") -> str:
+    """Use madmom's DBN downbeat tracker for meter detection.
+
+    Returns one of {"2/4", "3/4", "4/4"}. Falls back to fallback_meter
+    if madmom is unavailable or returns invalid output.
+
+    Distinct from estimate_meter() which is signal-flux heuristic.
+    """
+    try:
+        from madmom.features.downbeats import DBNDownBeatTrackingProcessor, RNNDownBeatProcessor
+        import numpy as np
+
+        if not hasattr(estimate_meter_madmom, "_madmom_db_proc"):
+            estimate_meter_madmom._madmom_db_proc = RNNDownBeatProcessor()  # type: ignore[attr-defined]
+            estimate_meter_madmom._madmom_db_tracker = DBNDownBeatTrackingProcessor(  # type: ignore[attr-defined]
+                beats_per_bar=[2, 3, 4], fps=100
+            )
+        acts = estimate_meter_madmom._madmom_db_proc(audio_path)  # type: ignore[attr-defined]
+        result = estimate_meter_madmom._madmom_db_tracker(acts)  # type: ignore[attr-defined]
+        if len(result) >= 4:
+            max_pos = int(np.max(result[:, 1]))
+            if 2 <= max_pos <= 4:
+                return f"{max_pos}/4"
+    except Exception:
+        pass
+    return fallback_meter
 
 
 def refine_tempo_from_note_onsets(

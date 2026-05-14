@@ -15,6 +15,11 @@ matplotlib>=3.7.0
 # PyTorch (~700 MB) so the installer grows substantially; users with
 # accompanied recordings see the biggest accuracy win.
 demucs>=4.0.0
+# madmom: RNN-based beat + downbeat detection. ISMIR-validated SOTA,
+# replaces librosa's spectral-flux heuristic which famously returns
+# half/double the true tempo. Installs from git because pip release
+# doesn't build on Python 3.11+ (madmom 0.16 last released 2018).
+madmom @ git+https://github.com/CPJKU/madmom.git
 pytest>=8.2.0
 httpx>=0.27.0
 
