@@ -28,6 +28,74 @@ def estimate_tempo_and_beats(audio: Any, sample_rate: int) -> tuple[float, list[
     return tempo_value, [float(t) for t in beats]
 
 
+def refine_tempo_from_note_onsets(
+    onsets_seconds: list[float],
+    *,
+    initial_tempo_bpm: float,
+    min_bpm: float = 40.0,
+    max_bpm: float = 200.0,
+    preferred_low: float = 60.0,
+    preferred_high: float = 150.0,
+) -> float:
+    """Refine the tempo estimate using note onsets from the transcription
+    pass (typically Basic Pitch).
+
+    librosa.beat.beat_track is famous for half/double tempo errors. The
+    inter-onset interval (IOI) histogram of the transcribed notes gives
+    us a much cleaner signal because it only sees real musical events.
+
+    Strategy:
+    1. Compute inter-onset intervals between successive notes.
+    2. Histogram on log space; pick the dominant IOI as candidate.
+    3. Fold the candidate into the [preferred_low, preferred_high] band
+       by doubling/halving as needed. Most music sits in 60-150 BPM, so
+       a candidate of 240 gets folded down to 120 and a candidate of 30
+       gets folded up to 60.
+
+    If onsets are insufficient (<8 notes) or the IOI histogram is too
+    noisy, return the initial estimate.
+    """
+    import numpy as np
+
+    if len(onsets_seconds) < 8:
+        return float(initial_tempo_bpm)
+
+    iois = np.diff(sorted(onsets_seconds))
+    iois = iois[(iois > 60.0 / max_bpm) & (iois < 60.0 / min_bpm)]
+    if len(iois) < 5:
+        return float(initial_tempo_bpm)
+
+    log_iois = np.log(iois)
+    bins = np.linspace(log_iois.min(), log_iois.max(), 32)
+    hist, edges = np.histogram(log_iois, bins=bins)
+    peak_bin = int(np.argmax(hist))
+    peak_ioi_sec = float(np.exp((edges[peak_bin] + edges[peak_bin + 1]) / 2.0))
+    candidate_bpm = 60.0 / max(peak_ioi_sec, 0.05)
+
+    # Fold candidate into the preferred range [60, 150]. Music perception
+    # is octave-equivalent for tempo (a piece "at" 120 BPM and "at" 60 BPM
+    # half-note feel are notationally distinct but rhythmically the same).
+    # The preferred range is where most listeners would tap a foot, so we
+    # collapse to that.
+    refined = float(candidate_bpm)
+    safety = 0
+    while refined < preferred_low and safety < 6:
+        refined *= 2.0
+        safety += 1
+    while refined > preferred_high and safety < 12:
+        refined /= 2.0
+        safety += 1
+    refined = max(min_bpm, min(max_bpm, refined))
+
+    # Don't override the initial estimate when the disagreement is < 7 %.
+    # Within that margin librosa's beats are probably right and we shouldn't
+    # rebuild the grid (rebuilding loses librosa's per-beat fine alignment).
+    initial = float(initial_tempo_bpm)
+    if abs(np.log2(refined / initial)) < 0.10:
+        return initial
+    return refined
+
+
 def quantize_notes_to_grid(
     notes: list[dict[str, Any]],
     *,

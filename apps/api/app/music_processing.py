@@ -1005,6 +1005,39 @@ def process_job_v2(
             "未能从音频中提取到任何音符。请换一段更清晰、主旋律明显的录音。"
         )
 
+    # Refine tempo using the music-aware note onsets we just extracted.
+    # librosa.beat.beat_track on raw audio is famously bad at half/double
+    # errors -- it often returns 152 BPM for a piece that's actually
+    # 76 BPM, or 90 BPM for a 180 BPM piece. The inter-onset-interval
+    # histogram of the transcribed notes is much cleaner because it only
+    # sees real musical events (not bow noise / breath / room reflections).
+    try:
+        from app.rhythm import refine_tempo_from_note_onsets
+        onsets_for_refine = [float(n["start_time"]) for n in raw_notes]
+        refined_tempo = refine_tempo_from_note_onsets(
+            onsets_for_refine,
+            initial_tempo_bpm=tempo_bpm,
+        )
+        if abs(refined_tempo - tempo_bpm) > 1.0:
+            # The refiner crossed the 10% disagreement threshold and picked
+            # a different tempo -- rebuild the beat grid for that tempo, and
+            # also re-estimate meter because the original meter call used the
+            # WRONG beat grid (built on librosa's pre-refinement tempo).
+            tempo_bpm = refined_tempo
+            seconds_per_beat = 60.0 / max(tempo_bpm, 1.0)
+            audio_seconds = onsets_for_refine[-1] if onsets_for_refine else 60.0
+            beats = [i * seconds_per_beat for i in range(int(audio_seconds / seconds_per_beat) + 4)]
+            # Re-derive meter using corrected beat grid. estimate_meter
+            # peeks at onset-strength accents at every Nth beat, so a beat
+            # grid built on doubled tempo would shift the accents off by a
+            # factor of 2 and lock onto a wrong meter.
+            try:
+                meter = estimate_meter(beats, audio, sample_rate)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     update_job(job_id, config, status="postprocessing", progress=75, error=None)
     raw_violin_warning = target_instrument == "violin" and has_violin_range_warning(raw_notes)
     filtered_notes, filtered_count = prepare_notes_for_target(raw_notes, target_instrument)
