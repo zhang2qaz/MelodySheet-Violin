@@ -937,8 +937,44 @@ def process_job_v2(
     meter = estimate_meter(beats, audio, sample_rate)
 
     if profile["is_monophonic"]:
-        raw_notes = transcribe_monophonic(target_audio, sample_rate, target_instrument)
-        transcription_method = "pyin-monophonic"
+        # =================================================================
+        # New monophonic transcription path:
+        #
+        # Route via Basic Pitch (Spotify's ICASSP-2022 CNN, trained on real
+        # recordings) + greedy melody-line extraction. The previous
+        # implementation used librosa.pyin -- a viterbi-smoothed YIN
+        # tracker from 1990s signal processing. pYIN works on clean
+        # synthetic audio but degrades sharply on real recordings:
+        # voiced_prob drops to 0.2-0.4 on vibrato passages and strong
+        # accented notes (exactly the notes a violinist would highlight),
+        # so any voicing-prob-based filter loses the structurally most
+        # important notes -- the "重音 丢失" failure the user reported.
+        #
+        # Basic Pitch handles vibrato by design (it was trained with
+        # MAESTRO + MedleyDB which contain real performance dynamics).
+        # We pass it the same WAV that pYIN would have analysed, then
+        # collapse Basic Pitch's polyphonic output to a single voice by
+        # sweep-by-highest-velocity at each time slice.
+        # =================================================================
+        from app.transcribe_violin_bp import transcribe_violin_via_basic_pitch
+        from app.audio_io import write_wav
+
+        bp_wav = work_dir / "target_for_bp_mono.wav"
+        try:
+            write_wav(target_audio, bp_wav, sample_rate)
+            bp_input = bp_wav
+        except Exception:
+            # Fall back to whatever path the pipeline already has.
+            bp_input = target_stem_path if target_stem_path != wav_path else wav_path
+
+        try:
+            raw_notes = transcribe_violin_via_basic_pitch(bp_input)
+            transcription_method = "basic-pitch-monophonic"
+        except Exception:
+            # Last-resort fallback to the legacy pYIN path so a transient
+            # Basic Pitch issue doesn't blank the whole job.
+            raw_notes = transcribe_monophonic(target_audio, sample_rate, target_instrument)
+            transcription_method = "pyin-monophonic"
     else:
         # Polyphonic: try MT3 first (if enabled & installed), then fall back to
         # Basic Pitch with tuned thresholds. Basic Pitch reads directly from a
