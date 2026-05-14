@@ -7,17 +7,44 @@ import type {
   TargetInstrument,
 } from "@/lib/types";
 
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:8000";
+/**
+ * Resolve the API base URL with three modes:
+ *
+ *   undefined env var → "http://localhost:8000" (dev default, when the web
+ *                       app is running separately from the api)
+ *   empty string ""   → use current page origin (the installer bundle
+ *                       serves frontend + api from the same FastAPI port,
+ *                       so we want same-origin relative URLs)
+ *   any other value   → use that explicit URL (e.g. behind a reverse proxy)
+ *
+ * The old logic used `||` which treated "" as falsy and clobbered the
+ * "same-origin" intent of the installer build, causing the installed exe
+ * to point at http://localhost:8000 (where nothing was listening).
+ */
+const ENV_BASE: string | undefined = process.env.NEXT_PUBLIC_API_BASE_URL;
+const TRIMMED_ENV: string | undefined =
+  typeof ENV_BASE === "string" ? ENV_BASE.replace(/\/$/, "") : undefined;
 
-export function apiUrl(path: string | null | undefined): string {
-  if (!path) {
+export function apiBaseUrl(): string {
+  if (TRIMMED_ENV === undefined) return "http://localhost:8000";
+  if (TRIMMED_ENV === "") {
+    if (typeof window !== "undefined" && window.location) {
+      return window.location.origin;
+    }
     return "";
   }
-  if (path.startsWith("http://") || path.startsWith("https://")) {
-    return path;
-  }
-  return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+  return TRIMMED_ENV;
+}
+
+// Compatibility re-export: prefer apiBaseUrl() in new code.
+export const API_BASE_URL = TRIMMED_ENV ?? "http://localhost:8000";
+
+export function apiUrl(path: string | null | undefined): string {
+  if (!path) return "";
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  const base = apiBaseUrl();
+  const tail = path.startsWith("/") ? path : `/${path}`;
+  return `${base}${tail}`;
 }
 
 async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -25,8 +52,9 @@ async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<R
     return await fetch(input, init);
   } catch (error) {
     if (error instanceof TypeError) {
+      const base = apiBaseUrl() || "(同源)";
       throw new Error(
-        `无法连接后端 API（${API_BASE_URL}）。请确认后端服务正在运行，然后刷新页面。`,
+        `无法连接后端 API（${base}）。请确认后端服务正在运行，然后刷新页面。`,
       );
     }
     throw error;
@@ -52,7 +80,7 @@ export async function createJob(
   const body = new FormData();
   body.append("file", file);
   body.append("target_instrument", targetInstrument);
-  const response = await apiFetch(`${API_BASE_URL}/api/jobs`, {
+  const response = await apiFetch(`${apiBaseUrl()}/api/jobs`, {
     method: "POST",
     body,
   });
@@ -63,7 +91,7 @@ export async function createJobFromUrl(
   url: string,
   targetInstrument: TargetInstrument = "violin",
 ): Promise<CreateJobResponse> {
-  const response = await apiFetch(`${API_BASE_URL}/api/jobs/from-url`, {
+  const response = await apiFetch(`${apiBaseUrl()}/api/jobs/from-url`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url, target_instrument: targetInstrument }),
@@ -72,7 +100,7 @@ export async function createJobFromUrl(
 }
 
 export async function getJob(jobId: string): Promise<JobResponse> {
-  const response = await apiFetch(`${API_BASE_URL}/api/jobs/${jobId}`, {
+  const response = await apiFetch(`${apiBaseUrl()}/api/jobs/${jobId}`, {
     cache: "no-store",
   });
   return parseJsonOrThrow<JobResponse>(response);
@@ -93,7 +121,7 @@ export async function regenerateJob(
   notes: EditableNote[],
   overrides?: { tempo_bpm?: number | null; detected_key?: string | null; meter?: string | null },
 ): Promise<JobResponse> {
-  const response = await apiFetch(`${API_BASE_URL}/api/jobs/${jobId}/regenerate`, {
+  const response = await apiFetch(`${apiBaseUrl()}/api/jobs/${jobId}/regenerate`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
