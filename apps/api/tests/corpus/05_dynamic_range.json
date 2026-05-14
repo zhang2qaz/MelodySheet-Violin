@@ -1,0 +1,30 @@
+{
+  "sample_rate": 22050,
+  "notes": [
+    {
+      "midi": 69,
+      "start": 0.5,
+      "end": 1.2
+    },
+    {
+      "midi": 71,
+      "start": 1.5,
+      "end": 2.2
+    },
+    {
+      "midi": 72,
+      "start": 2.5,
+      "end": 3.2
+    },
+    {
+      "midi": 74,
+      "start": 3.5,
+      "end": 4.2
+    },
+    {
+      "midi": 76,
+      "start": 4.5,
+      "end": 5.2
+    }
+  ]
+}

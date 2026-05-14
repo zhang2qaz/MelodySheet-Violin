@@ -115,54 +115,117 @@ def transcribe_violin_via_basic_pitch(
         return []
 
     # =====================================================================
-    # Greedy monophonic melody extraction.
+    # Monophonic projection: trust Basic Pitch's note boundaries.
     #
-    # Basic Pitch is polyphonic. For a target like violin (monophonic by
-    # nature) we collapse the output to a single voice by sweeping a
-    # cursor through time and, at each moment, keeping the loudest
-    # currently-active note. This naturally captures the "lead voice"
-    # in a recording even when overtones / accompaniment are detected
-    # by Basic Pitch as additional notes.
+    # Background: the previous algorithm was a sweep-event-based "winner at
+    # each instant" approach that merged adjacent same-pitch segments
+    # within 50 ms. That correctly handled the case where Basic Pitch
+    # falsely detects an overtone as a brief separate note, but it also
+    # WRONGLY collapsed legitimate consecutive same-pitch notes (e.g. 8
+    # repeated C5 quarter-notes) into a single long sustain. On the
+    # synthetic corpus's repeated-note test, recall fell from 8/8 to 1/8.
+    #
+    # New algorithm:
+    #   For each Basic Pitch note (which has reliable onset/offset times),
+    #   ask "was this note the loudest pitch active at its own onset?"
+    #   - If yes, keep it as-is (its boundaries are the truth).
+    #   - If no, discard it (it's an overtone or accompaniment that was
+    #     drowned out by a higher-velocity note at the same moment).
+    #
+    # This preserves note counts (a 16th-note tremolo of 8 C5s stays 8
+    # separate notes) while still removing overtone false-positives that
+    # appear under louder main-voice notes.
     # =====================================================================
-    events: list[tuple[float, str, int, float]] = []
-    for s, e, midi, vel in raw:
-        events.append((s, "on", midi, vel))
-        events.append((e, "off", midi, vel))
-    # 'off' before 'on' at the same timestamp so a note that ends exactly
-    # when another starts doesn't drag.
-    events.sort(key=lambda x: (x[0], 0 if x[1] == "off" else 1))
+    # Sort by onset time; tie-break by descending velocity so the loudest
+    # note at a shared onset wins in case of pure ties.
+    raw_sorted = sorted(raw, key=lambda evt: (evt[0], -evt[3]))
 
-    active: dict[int, float] = {}  # midi -> velocity
-    segments: list[tuple[float, float, int, float]] = []
-    prev_t: float | None = None
-    prev_winner: tuple[int, float] | None = None
-    for t, kind, midi, vel in events:
-        if prev_winner is not None and prev_t is not None and t > prev_t + 1e-4:
-            segments.append((prev_t, t, prev_winner[0], prev_winner[1]))
-        if kind == "on":
-            active[midi] = vel
-        else:
-            active.pop(midi, None)
-        if active:
-            winner_midi = max(active.keys(), key=lambda m: active[m])
-            prev_winner = (winner_midi, active[winner_midi])
-        else:
-            prev_winner = None
-        prev_t = t
+    def is_dominant_at_onset(note_idx: int) -> bool:
+        """Check whether note `note_idx` has the highest velocity among all
+        Basic Pitch events whose time interval contains this note's onset."""
+        my_start, _my_end, _my_midi, my_vel = raw_sorted[note_idx]
+        for other_idx, (s, e, _m, v) in enumerate(raw_sorted):
+            if other_idx == note_idx:
+                continue
+            # Does `other` cover `my_start`? Use a small tolerance so a note
+            # that starts at exactly my_start (not yet sounding at my onset)
+            # doesn't count as covering it.
+            if s + 0.005 <= my_start <= e - 0.005 and v > my_vel:
+                return False
+        return True
 
-    # Merge consecutive same-pitch segments (the "winner" can flicker on
-    # near-simultaneous note onsets at the same pitch).
-    merged: list[list[float | int]] = []
-    for s, e, midi, vel in segments:
-        if merged and merged[-1][2] == midi and float(merged[-1][1]) >= s - 0.05:
-            merged[-1][1] = e
-            merged[-1][3] = max(float(merged[-1][3]), vel)
-        else:
-            merged.append([s, e, midi, vel])
+    keepers_raw: list[tuple[float, float, int, float]] = []
+    for idx in range(len(raw_sorted)):
+        if is_dominant_at_onset(idx):
+            keepers_raw.append(raw_sorted[idx])
 
-    # Drop tiny fragments (< min_note_seconds). These are usually
-    # transient overtone catches that the merge step couldn't absorb.
-    keepers = [seg for seg in merged if (seg[1] - seg[0]) >= min_note_seconds]
+    # Truncate overlapping monophonic notes. If two surviving notes overlap
+    # in time, shorten the earlier one so it ends when the later one begins.
+    keepers_raw.sort(key=lambda x: x[0])
+    truncated: list[list[float | int]] = []
+    for s, e, midi, vel in keepers_raw:
+        if truncated and float(truncated[-1][1]) > s + 0.005:
+            truncated[-1][1] = s
+        truncated.append([float(s), float(e), int(midi), float(vel)])
+
+    # =====================================================================
+    # Merge vibrato sub-fragments while preserving repeated-note structure.
+    #
+    # Basic Pitch sometimes splits a single sustained vibrato note into
+    # several abutting sub-notes at the same pitch (e.g. for a 0.5 s A4
+    # with 5 Hz vibrato it emits 3 sub-notes of ~220/140/130 ms). These
+    # MUST be merged back -- they're not a tremolo or repeated articulation,
+    # they're a single bowed note with pitch wobble.
+    #
+    # Meanwhile, a true repeated-note passage (e.g. 8 abutting C5 quarter
+    # notes from a tremolo or "bow change") produces sub-notes of ~500 ms
+    # each -- the listener hears them as separate articulations and
+    # would expect 8 distinct noteheads on the score.
+    #
+    # Discriminator: vibrato sub-fragments are SHORT (< 200 ms), while real
+    # repeated notes are typically >= 200 ms. So merge a chain of abutting
+    # same-pitch notes only if at least one of them is < 200 ms.
+    # (200 ms = an 8th note at 150 BPM, well below most violin
+    # articulations; vibrato sub-fragments are reliably below this.)
+    # =====================================================================
+    VIBRATO_SUBNOTE_THRESHOLD = 0.20  # seconds
+    ABUT_GAP_THRESHOLD = 0.03         # seconds; consider notes "abutting" if gap <= this
+
+    # First pass: walk through and form groups of consecutive same-pitch
+    # abutting notes.
+    groups: list[list[list[float | int]]] = []
+    for seg in truncated:
+        if (
+            groups
+            and groups[-1][-1][2] == seg[2]
+            and seg[0] - float(groups[-1][-1][1]) <= ABUT_GAP_THRESHOLD
+        ):
+            groups[-1].append(seg)
+        else:
+            groups.append([seg])
+
+    keepers: list[list[float | int]] = []
+    for group in groups:
+        if len(group) == 1:
+            keepers.append(group[0])
+            continue
+        # Decision: any sub-note shorter than the vibrato threshold => merge.
+        has_short = any(
+            (float(g[1]) - float(g[0])) < VIBRATO_SUBNOTE_THRESHOLD for g in group
+        )
+        if has_short:
+            merged = [
+                float(group[0][0]),
+                float(group[-1][1]),
+                int(group[0][2]),
+                max(float(g[3]) for g in group),
+            ]
+            keepers.append(merged)
+        else:
+            keepers.extend(group)
+
+    # Drop tiny notes (likely fragments that survived all filters).
+    keepers = [seg for seg in keepers if (float(seg[1]) - float(seg[0])) >= min_note_seconds]
 
     # Convert to the pipeline's note schema.
     notes: list[dict[str, Any]] = []
