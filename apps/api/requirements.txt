@@ -15,21 +15,27 @@ matplotlib>=3.7.0
 # PyTorch (~700 MB) so the installer grows substantially; users with
 # accompanied recordings see the biggest accuracy win.
 demucs>=4.0.0
-# madmom: RNN-based beat + downbeat detection. ISMIR-validated SOTA,
-# replaces librosa's spectral-flux heuristic which famously returns
-# half/double the true tempo. Installs from git because pip release
-# doesn't build on Python 3.11+ (madmom 0.16 last released 2018).
+# madmom: RNN-based beat + downbeat detection (ISMIR SOTA). Also
+# provides SuperFluxProcessor for anti-vibrato onset detection used as
+# a cross-validation pass in transcribe_violin_bp. From git because
+# pip release 0.16 (2018) doesn't build on Python 3.11+.
 madmom @ git+https://github.com/CPJKU/madmom.git
+# essentia: KeyExtractor with Krumhansl + Temperley + Edma profiles.
+# Audio-based key detection (operates on chromagram of raw audio) is
+# more robust than running music21.analyze("key") over noisy
+# transcribed notes. Multi-profile ensemble in _detect_key_from_audio.
+essentia>=2.1b6.dev1389
 # torchcrepe: PyTorch port of Google's CREPE pitch tracker. Used as a
 # second-opinion ensembler on top of Basic Pitch -- BP locks the note
 # events but CREPE often disagrees on the exact pitch class. On real
 # violin audio CREPE overrides 9-36 % of BP's pitch decisions.
 torchcrepe>=0.0.24
+# crepe (TF-backed) for the older app/pitch_crepe.py wrapper path.
+# Requires tensorflow as a hard dep -- which conflicts with Basic Pitch's
+# saved_model loader (TF 2.20+ can't load BP's frozen graph). We work
+# around that by pointing Basic Pitch at its ONNX file explicitly,
+# which is why onnxruntime is here as a HARD dep, not optional.
+crepe>=0.0.16
+onnxruntime>=1.19.0
 pytest>=8.2.0
 httpx>=0.27.0
-
-# Optional, recommended for production-quality results — install separately if your
-# deployment can handle the extra disk and runtime cost:
-#   pip install demucs            # htdemucs_6s six-stem source separation
-#   pip install tensorflow-hub    # YAMNet instrument identification
-#   pip install crepe             # CREPE deep pitch tracker (monophonic transcription)

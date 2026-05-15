@@ -86,8 +86,12 @@ for pkg in (
     "openunmix",       # demucs wraps this as one of its backends
     "dora",            # config plumbing demucs uses internally (dora-search)
     "omegaconf",       # demucs hparams
-    "madmom",          # ISMIR-SOTA beat + downbeat tracking
+    "madmom",          # ISMIR-SOTA beat + downbeat + SuperFlux onset
     "torchcrepe",      # CREPE pitch ensemble (second-opinion on BP)
+    "essentia",        # KeyExtractor (multi-profile audio key detect)
+    "crepe",           # CREPE TF wrapper path (alongside torchcrepe)
+    "tensorflow",      # required by crepe; we route BP via ONNX
+    "onnxruntime",     # Basic Pitch ONNX inference
 ):
     try:
         sub_datas, sub_binaries, sub_hidden = collect_all(pkg)

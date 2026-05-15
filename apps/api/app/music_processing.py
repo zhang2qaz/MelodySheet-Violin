@@ -849,6 +849,42 @@ def _run_six_stem_separation_optional(
     return pick_stem_for_target(stems, target_instrument, input_wav, work_dir)
 
 
+def _detect_key_from_audio(audio_path: str) -> str | None:
+    """Audio-based key detection using essentia's KeyExtractor.
+
+    Runs Krumhansl, Temperley and Edma profiles and ensembles them by
+    weighting each prediction by its strength. Returns "<tonic> <mode>"
+    or None if essentia is unavailable / fails.
+
+    More robust than _detect_key_from_notes because it operates on the
+    raw audio directly, avoiding the cascade of errors that comes from
+    feeding noisy transcribed notes into music21.analyze("key").
+    """
+    try:
+        import essentia.standard as ess
+    except Exception:
+        return None
+    try:
+        audio = ess.MonoLoader(filename=audio_path)()
+        from collections import Counter
+        votes: Counter[str] = Counter()
+        for profile in ("krumhansl", "temperley", "edma"):
+            try:
+                ke = ess.KeyExtractor(profileType=profile)
+                tonic, scale, strength = ke(audio)
+                # weight votes by strength
+                key_str = f"{tonic} {scale}"
+                votes[key_str] += float(strength)
+            except Exception:
+                continue
+        if not votes:
+            return None
+        # Winner = highest weighted vote.
+        return votes.most_common(1)[0][0]
+    except Exception:
+        return None
+
+
 def _detect_key_from_notes(notes: list[dict[str, Any]]) -> str:
     try:
         from music21 import note as m21_note, stream
@@ -1054,7 +1090,11 @@ def process_job_v2(
         tempo_bpm=tempo_bpm,
         beats=beats,
     )
-    detected_key = _detect_key_from_notes(quantized)
+    # Audio-based key detection (essentia, multi-profile ensemble) is more
+    # robust than feeding our transcribed notes back into music21's
+    # Krumhansl analyzer. Fall back to note-based detection when essentia
+    # is unavailable or returns None.
+    detected_key = _detect_key_from_audio(str(wav_path)) or _detect_key_from_notes(quantized)
 
     track = Track(
         target_instrument=target_instrument,

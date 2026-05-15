@@ -138,12 +138,26 @@ def _predict_at_thresholds(
     minimum_frequency_hz: float,
     maximum_frequency_hz: float,
 ) -> list[tuple[float, float, int, float]]:
-    """Single Basic Pitch inference pass returning raw note events."""
+    """Single Basic Pitch inference pass returning raw note events.
+
+    Prefers the ONNX model. Background: when we installed TensorFlow for
+    CREPE, the newer TF version (2.20+) couldn't load Basic Pitch's
+    saved-model format from disk (AttributeError on add_slot). Basic
+    Pitch's predict() tries TF first by default and we'd never get to
+    the working ONNX fallback. Pass the .onnx file path explicitly so
+    it short-circuits to onnxruntime, which is stable across TF versions.
+    """
     from basic_pitch.inference import predict, ICASSP_2022_MODEL_PATH
+
+    # Prefer ONNX path if it exists (it almost always does in our installs).
+    model_path = ICASSP_2022_MODEL_PATH
+    onnx_path = Path(str(ICASSP_2022_MODEL_PATH) + ".onnx")
+    if onnx_path.exists():
+        model_path = onnx_path
 
     _model_output, _midi_data, note_events = predict(
         str(audio_path),
-        model_or_model_path=ICASSP_2022_MODEL_PATH,
+        model_or_model_path=model_path,
         onset_threshold=onset_threshold,
         frame_threshold=frame_threshold,
         minimum_note_length=minimum_note_ms,
@@ -222,6 +236,54 @@ def transcribe_violin_via_basic_pitch(
 
     if not raw:
         return []
+
+    # =====================================================================
+    # SuperFlux onset cross-check (madmom DAFx 2013, Boeck & Widmer).
+    #
+    # Basic Pitch sometimes invents notes mid-sustain (vibrato / release
+    # tail). SuperFlux uses max-filtering to suppress those false
+    # vibrato onsets, so it's a useful "no-fire-here" complement: if a
+    # BP note's onset has no nearby SuperFlux onset AND its velocity is
+    # low AND we're confident SuperFlux is producing reliable output on
+    # this audio, drop the note.
+    #
+    # Activation gate: only filter if SuperFlux onset density is at least
+    # 0.5 onsets/sec. Below that we assume SuperFlux is silent on this
+    # audio (e.g. clean synthetic test clips with soft attacks) and
+    # filtering by it would hurt recall.
+    # =====================================================================
+    try:
+        from madmom.features.onsets import SuperFluxProcessor, OnsetPeakPickingProcessor
+
+        sf_proc = SuperFluxProcessor()
+        sf_picker = OnsetPeakPickingProcessor(threshold=0.5, fps=100)
+        sf_acts = sf_proc(str(audio_path))
+        sf_onsets_sec = sf_picker(sf_acts)
+        # How long is the audio? Use the last raw BP note's end as proxy.
+        approx_duration = max(e for _s, e, _m, _v in raw) if raw else 1.0
+        sf_density = len(sf_onsets_sec) / max(approx_duration, 1.0)
+
+        if sf_density >= 0.5:
+            # SuperFlux is producing onsets -- enable cross-check.
+            import bisect
+
+            def _has_sf_support(t: float, tol: float = 0.08) -> bool:
+                idx = bisect.bisect_left(sf_onsets_sec, t)
+                for k in (idx - 1, idx):
+                    if 0 <= k < len(sf_onsets_sec) and abs(float(sf_onsets_sec[k]) - t) <= tol:
+                        return True
+                return False
+
+            raw_after_sf = []
+            for s, e, midi, vel in raw:
+                if vel < 0.45 and not _has_sf_support(s):
+                    continue
+                raw_after_sf.append((s, e, midi, vel))
+            # Don't let it strand us with nothing.
+            if len(raw_after_sf) >= max(3, len(raw) // 3):
+                raw = raw_after_sf
+    except Exception:
+        pass
 
     # =====================================================================
     # Monophonic projection: trust Basic Pitch's note boundaries.
