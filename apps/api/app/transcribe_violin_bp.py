@@ -252,25 +252,28 @@ def transcribe_violin_via_basic_pitch(
     # audio (e.g. clean synthetic test clips with soft attacks) and
     # filtering by it would hurt recall.
     # =====================================================================
+    # sf_onsets_sec is hoisted to function scope so the same-pitch merge
+    # step (further down) can also consult SuperFlux onset evidence.
+    sf_onsets_sec: list[float] = []
+    sf_reliable = False
     try:
         from madmom.features.onsets import SuperFluxProcessor, OnsetPeakPickingProcessor
 
         sf_proc = SuperFluxProcessor()
         sf_picker = OnsetPeakPickingProcessor(threshold=0.5, fps=100)
         sf_acts = sf_proc(str(audio_path))
-        sf_onsets_sec = sf_picker(sf_acts)
-        # How long is the audio? Use the last raw BP note's end as proxy.
+        sf_onsets_sec = sorted(float(t) for t in sf_picker(sf_acts))
         approx_duration = max(e for _s, e, _m, _v in raw) if raw else 1.0
         sf_density = len(sf_onsets_sec) / max(approx_duration, 1.0)
+        sf_reliable = sf_density >= 0.5
 
-        if sf_density >= 0.5:
-            # SuperFlux is producing onsets -- enable cross-check.
+        if sf_reliable:
             import bisect
 
             def _has_sf_support(t: float, tol: float = 0.08) -> bool:
                 idx = bisect.bisect_left(sf_onsets_sec, t)
                 for k in (idx - 1, idx):
-                    if 0 <= k < len(sf_onsets_sec) and abs(float(sf_onsets_sec[k]) - t) <= tol:
+                    if 0 <= k < len(sf_onsets_sec) and abs(sf_onsets_sec[k] - t) <= tol:
                         return True
                 return False
 
@@ -279,11 +282,22 @@ def transcribe_violin_via_basic_pitch(
                 if vel < 0.45 and not _has_sf_support(s):
                     continue
                 raw_after_sf.append((s, e, midi, vel))
-            # Don't let it strand us with nothing.
             if len(raw_after_sf) >= max(3, len(raw) // 3):
                 raw = raw_after_sf
     except Exception:
-        pass
+        sf_onsets_sec = []
+        sf_reliable = False
+
+    def _sf_onset_near(t: float, tol: float = 0.06) -> bool:
+        """True if a SuperFlux onset sits within +-tol of time t."""
+        if not sf_onsets_sec:
+            return False
+        import bisect
+        idx = bisect.bisect_left(sf_onsets_sec, t)
+        for k in (idx - 1, idx):
+            if 0 <= k < len(sf_onsets_sec) and abs(sf_onsets_sec[k] - t) <= tol:
+                return True
+        return False
 
     # =====================================================================
     # Monophonic projection: trust Basic Pitch's note boundaries.
@@ -367,30 +381,31 @@ def transcribe_violin_via_basic_pitch(
         truncated.append([float(s), float(e), int(midi), float(vel)])
 
     # =====================================================================
-    # Merge vibrato sub-fragments while preserving repeated-note structure.
+    # Merge same-pitch fragments that are really one sustained note.
     #
-    # Basic Pitch sometimes splits a single sustained vibrato note into
-    # several abutting sub-notes at the same pitch (e.g. for a 0.5 s A4
-    # with 5 Hz vibrato it emits 3 sub-notes of ~220/140/130 ms). These
-    # MUST be merged back -- they're not a tremolo or repeated articulation,
-    # they're a single bowed note with pitch wobble.
+    # Basic Pitch routinely splits ONE bowed violin note into 2+ abutting
+    # sub-notes at the same pitch -- vibrato, bow pressure changes, or its
+    # own frame-level instability. The user sees "one note rendered as
+    # two short notes". MUST merge those back.
     #
-    # Meanwhile, a true repeated-note passage (e.g. 8 abutting C5 quarter
-    # notes from a tremolo or "bow change") produces sub-notes of ~500 ms
-    # each -- the listener hears them as separate articulations and
-    # would expect 8 distinct noteheads on the score.
+    # But a genuine repeated-note passage (8 deliberate C5 quarter notes,
+    # tremolo, bow changes) must STAY separate -- the player articulated
+    # each one.
     #
-    # Discriminator: vibrato sub-fragments are SHORT (< 200 ms), while real
-    # repeated notes are typically >= 200 ms. So merge a chain of abutting
-    # same-pitch notes only if at least one of them is < 200 ms.
-    # (200 ms = an 8th note at 150 BPM, well below most violin
-    # articulations; vibrato sub-fragments are reliably below this.)
+    # Discriminator, in priority order:
+    #   1. SuperFlux onset evidence (when SuperFlux is reliable on this
+    #      audio): merge adjacent same-pitch notes UNLESS a SuperFlux
+    #      onset sits at their boundary. A real re-articulation produces
+    #      an acoustic onset; a BP-internal split does not. This is the
+    #      correct, physically-grounded test and it works regardless of
+    #      the sub-note durations.
+    #   2. Duration heuristic (fallback when SuperFlux is silent, e.g.
+    #      synthetic test clips): merge a chain if any sub-note < 200 ms.
     # =====================================================================
     VIBRATO_SUBNOTE_THRESHOLD = 0.20  # seconds
-    ABUT_GAP_THRESHOLD = 0.03         # seconds; consider notes "abutting" if gap <= this
+    ABUT_GAP_THRESHOLD = 0.06         # gap <= this counts as "abutting"
 
-    # First pass: walk through and form groups of consecutive same-pitch
-    # abutting notes.
+    # Group consecutive same-pitch abutting notes.
     groups: list[list[list[float | int]]] = []
     for seg in truncated:
         if (
@@ -407,20 +422,37 @@ def transcribe_violin_via_basic_pitch(
         if len(group) == 1:
             keepers.append(group[0])
             continue
-        # Decision: any sub-note shorter than the vibrato threshold => merge.
-        has_short = any(
-            (float(g[1]) - float(g[0])) < VIBRATO_SUBNOTE_THRESHOLD for g in group
-        )
-        if has_short:
-            merged = [
-                float(group[0][0]),
-                float(group[-1][1]),
-                int(group[0][2]),
-                max(float(g[3]) for g in group),
-            ]
-            keepers.append(merged)
+
+        if sf_reliable:
+            # Onset-evidence merge: walk the group, merge each note into
+            # the running note UNLESS a SuperFlux onset marks its start
+            # (a real re-articulation the player intended).
+            run = [float(group[0][0]), float(group[0][1]),
+                   int(group[0][2]), float(group[0][3])]
+            for nxt in group[1:]:
+                boundary = float(nxt[0])
+                if _sf_onset_near(boundary, tol=0.06):
+                    # Real articulation -> close the running note, start new.
+                    keepers.append(run)
+                    run = [float(nxt[0]), float(nxt[1]),
+                           int(nxt[2]), float(nxt[3])]
+                else:
+                    # No onset -> same sustained note, extend.
+                    run[1] = float(nxt[1])
+                    run[3] = max(run[3], float(nxt[3]))
+            keepers.append(run)
         else:
-            keepers.extend(group)
+            # Fallback duration heuristic (SuperFlux unavailable / silent).
+            has_short = any(
+                (float(g[1]) - float(g[0])) < VIBRATO_SUBNOTE_THRESHOLD for g in group
+            )
+            if has_short:
+                keepers.append([
+                    float(group[0][0]), float(group[-1][1]),
+                    int(group[0][2]), max(float(g[3]) for g in group),
+                ])
+            else:
+                keepers.extend(group)
 
     # Drop tiny notes (likely fragments that survived all filters).
     keepers = [seg for seg in keepers if (float(seg[1]) - float(seg[0])) >= min_note_seconds]

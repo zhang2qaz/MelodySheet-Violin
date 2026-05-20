@@ -192,31 +192,65 @@ def _build_part(track: Track) -> Any:
                 break
         return result
 
-    for raw in sorted(track.notes, key=lambda item: (item["start_time"], item["midi_number"])):
+    # =====================================================================
+    # RHYTHMIC-SLOT TILING (the "read like 简谱" fix)
+    #
+    # Basic Pitch reports each note's ACOUSTIC length -- how long the
+    # string actually rang. That is shorter than the note's RHYTHMIC
+    # VALUE (how many beats the note occupies) because a violinist
+    # detaches notes: a quarter note rings ~0.8 beat then 0.2 beat of
+    # bow-lift silence. The old code notated that 0.2 beat as a REST,
+    # producing scores littered with tiny junk rests that don't exist
+    # in the numbered notation.
+    #
+    # Fix: each note's displayed duration = distance to the NEXT note's
+    # onset (snapped to standard note values). Every note tiles its own
+    # rhythmic slot; small detache gaps vanish. A rest is inserted ONLY
+    # when the gap to the next note is genuinely large (>= 2 beats) --
+    # an actual musical pause, not articulation noise.
+    # =====================================================================
+    REST_GAP_THRESHOLD_QUARTERS = 2.0  # only gaps >= a half note become rests
+
+    sorted_notes = sorted(track.notes, key=lambda item: (item["start_time"], item["midi_number"]))
+    for note_index, raw in enumerate(sorted_notes):
         start_quarters = float(raw["start_time"]) / seconds_per_quarter
-        duration_quarters = float(
+        acoustic_duration_quarters = float(
             raw.get("duration_quarters")
             or (raw.get("duration_seconds", 1.0) / seconds_per_quarter)
         )
-        if duration_quarters <= 0:
+        if acoustic_duration_quarters <= 0:
             continue
 
-        # Only insert a rest if the gap is at least a 16th note. Smaller
-        # gaps are absorbed by the previous note (its end_time conceptually
-        # extends to the next note's onset) or by the next note (its
-        # onset snaps to the previous note's end). This is the music
-        # editor's convention -- gaps under a 16th note aren't typically
-        # notated as a rest, just as part of the surrounding articulation.
-        if start_quarters - cursor_quarters > MIN_GAP_TO_INSERT_REST:
+        # Distance to the next note's onset -- the rhythmic slot this note
+        # should occupy.
+        if note_index + 1 < len(sorted_notes):
+            next_start_quarters = (
+                float(sorted_notes[note_index + 1]["start_time"]) / seconds_per_quarter
+            )
+            slot_quarters = next_start_quarters - start_quarters
+        else:
+            # Last note: no successor. Use its own acoustic length.
+            slot_quarters = acoustic_duration_quarters
+
+        gap_after = slot_quarters - acoustic_duration_quarters
+        if gap_after >= REST_GAP_THRESHOLD_QUARTERS:
+            # Genuine musical pause: note keeps its acoustic length, the
+            # gap becomes a rest (handled below after the note is emitted).
+            duration_quarters = acoustic_duration_quarters
+            rest_quarters = gap_after
+        else:
+            # Small detache gap: note fills the whole slot, no rest.
+            duration_quarters = max(slot_quarters, acoustic_duration_quarters)
+            rest_quarters = 0.0
+
+        # Leading rest before the very first note, if it starts late.
+        if start_quarters - cursor_quarters > REST_GAP_THRESHOLD_QUARTERS:
             for piece in split_into_standard(start_quarters - cursor_quarters):
                 rest = note.Rest()
                 rest.duration = duration.Duration(piece)
                 part.append(rest)
             cursor_quarters = start_quarters
 
-        # Split notes into tied pieces of standard quarter-lengths so that
-        # MusicXML export doesn't fail on values like 2.24 quarters that come
-        # out of beat-grid quantization.
         # Canonical pitch derivation: re-spell from MIDI + detected_key
         # so the staff view uses the SAME accidental as the numbered
         # notation. Falls back to whatever the upstream pipeline wrote
@@ -253,6 +287,14 @@ def _build_part(track: Track) -> Any:
             part.append(generated)
             last_note = generated
         cursor_quarters = start_quarters + duration_quarters
+
+        # Emit a rest ONLY for a genuine multi-beat musical pause.
+        if rest_quarters >= REST_GAP_THRESHOLD_QUARTERS:
+            for piece in split_into_standard(rest_quarters):
+                rest = note.Rest()
+                rest.duration = duration.Duration(piece)
+                part.append(rest)
+            cursor_quarters += rest_quarters
 
     try:
         part.makeMeasures(inPlace=True)
